@@ -29,8 +29,12 @@ python3 -m http.server 8000
 # open http://localhost:8000
 ```
 
-To use it on your phone, deploy the folder to any static host with HTTPS
-(e.g. GitHub Pages: *Settings → Pages → Deploy from branch*).
+To use it on your phone, open the GitHub Pages site:
+**https://helloskot.github.io/emoji-fied/**
+
+(Pages is served straight from the root of `main`: *Settings → Pages →
+Source: Deploy from a branch → `main` / `(root)`*. `.nojekyll` makes Pages
+serve the files as-is.)
 
 ## How it works
 
