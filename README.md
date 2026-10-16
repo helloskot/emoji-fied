@@ -17,7 +17,9 @@ No build step, no dependencies, and no video ever leaves your device.
   much ink each glyph uses, so order doesn't matter).
 
 **React to sound** (uses the microphone): *Pulse* makes the glyphs swell with
-loudness, and every beat sends a ripple out from the center, shifts the hues,
+loudness, and every beat sends a wave out from the center in a shape (circle, heart,
+spinning star, square, diamond, hexagon or a sweep; mixed or fixed, with
+optional glow outlines), shifts the hues,
 flashes, shakes and zoom-punches the picture; *Shuffle on beats* switches to a random look on each
 beat, or both. **Sensitivity** and **Effect strength** sliders tune it. While it's on,
 recorded clips include the audio.

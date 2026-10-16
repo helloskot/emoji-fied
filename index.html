@@ -13,7 +13,7 @@
   <link rel="apple-touch-icon" href="icons/icon-180.png" />
   <title>Emoji-fied</title>
   <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🤩</text></svg>" />
-  <link rel="stylesheet" href="style.css?v=14" />
+  <link rel="stylesheet" href="style.css?v=15" />
 </head>
 <body>
   <header>
@@ -52,7 +52,7 @@
           <button id="start" class="primary">Start camera</button>
           <p class="status" id="status" aria-live="polite"></p>
           <p class="error" id="error" role="alert"></p>
-          <p class="note">Everything runs in your browser. No video leaves your device. <span class="version">v14</span></p>
+          <p class="note">Everything runs in your browser. No video leaves your device. <span class="version">v15</span></p>
         </div>
       </div>
     </div>
@@ -117,6 +117,22 @@
             <span>Effect strength <output id="fxOut"></output></span>
             <input id="fxStrength" type="range" min="0" max="2" step="0.05" value="1" />
           </label>
+          <label class="field">
+            <span>Beat shapes</span>
+            <select id="beatShape">
+              <option value="mix" selected>🎲 Mix it up</option>
+              <option value="circle">○ Circles</option>
+              <option value="heart">♥ Hearts</option>
+              <option value="star">★ Stars</option>
+              <option value="square">■ Squares</option>
+              <option value="diamond">◆ Diamonds</option>
+              <option value="hexagon">⬢ Hexagons</option>
+              <option value="sweep">≋ Sweeps</option>
+            </select>
+          </label>
+          <div class="toggles">
+            <label><input id="beatOutline" type="checkbox" checked /> Glow outlines</label>
+          </div>
         </div>
       </div>
 
@@ -257,7 +273,7 @@
             function () { var r = document.createRange(); r.selectNodeContents(pre); var s = getSelection(); s.removeAllRanges(); s.addRange(r); }
           );
         });
-        dbg('page v14', navigator.userAgent);
+        dbg('page v15', navigator.userAgent);
         dbg('secure=' + window.isSecureContext, 'mediaDevices=' + !!navigator.mediaDevices,
             'getUserMedia=' + !!(navigator.mediaDevices && navigator.mediaDevices.getUserMedia));
         if (navigator.permissions && navigator.permissions.query) {
@@ -278,10 +294,10 @@
       window.addEventListener('unhandledrejection', function (e) { dbg('REJECTION', String(e.reason)); show((e.reason && e.reason.message) || String(e.reason)); });
       window.addEventListener('load', function () {
         dbg('load event, app ready = ' + window.emojiFiedReady);
-        if (window.emojiFiedReady !== '14') show('an old or broken copy of the app loaded. Close this tab and open the link again.');
+        if (window.emojiFiedReady !== '15') show('an old or broken copy of the app loaded. Close this tab and open the link again.');
       });
     })();
   </script>
-  <script src="app.js?v=14"></script>
+  <script src="app.js?v=15"></script>
 </body>
 </html>
