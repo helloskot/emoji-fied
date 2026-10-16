@@ -64,6 +64,21 @@ const ui = {
   startScreen: $('#startScreen'),
   sourceButtons: [...document.querySelectorAll('[data-source]')],
   fileInput: $('#fileInput'),
+  photoPanel: $('#photoPanel'),
+  kenBurns: $('#kenBurns'),
+  tilt: $('#tilt'),
+  twinkle: $('#twinkle'),
+  assemble: $('#assemble'),
+  posterSize: $('#posterSize'),
+  posterCols: $('#posterCols'),
+  posterColsOut: $('#posterColsOut'),
+  makePoster: $('#makePoster'),
+  posterSheet: $('#posterSheet'),
+  posterImg: $('#posterImg'),
+  posterInfo: $('#posterInfo'),
+  posterShare: $('#posterShare'),
+  posterDownload: $('#posterDownload'),
+  posterClose: $('#posterClose'),
   error: $('#error'),
   status: $('#status'),
   style: $('#style'),
@@ -237,6 +252,7 @@ function buildEmojiPalette(chars) {
   pal.entries.forEach((e, i) => (e.i = i));
   pal.byLum = [...pal.entries].sort((x, y) => x.lum - y.lum);
   pal.lut = new Int16Array(1 << 15).fill(-1);
+  pal.lut2 = new Int16Array(1 << 15).fill(-1); // runner-up, for twinkle
   return pal;
 }
 
@@ -289,14 +305,22 @@ function nearestEmoji(pal, r, g, b) {
   let idx = pal.lut[key];
   if (idx >= 0) return idx;
   const qr = ((r >> 3) << 3) + 4, qg = ((g >> 3) << 3) + 4, qb = ((b >> 3) << 3) + 4;
-  let best = Infinity;
+  let best = Infinity, second = Infinity, idx2 = -1;
   const es = pal.entries;
   for (let i = 0; i < es.length; i++) {
     const d = colorDist(qr, qg, qb, es[i].r, es[i].g, es[i].b);
-    if (d < best) { best = d; idx = i; }
+    if (d < best) { second = best; idx2 = idx; best = d; idx = i; }
+    else if (d < second) { second = d; idx2 = i; }
   }
   pal.lut[key] = idx;
+  pal.lut2[key] = idx2 >= 0 ? idx2 : idx;
   return idx;
+}
+
+// The next-closest emoji by color (twinkle shimmers between the two).
+function secondNearestEmoji(pal, r, g, b) {
+  nearestEmoji(pal, r, g, b);
+  return pal.lut2[((r >> 3) << 10) | ((g >> 3) << 5) | (b >> 3)];
 }
 
 // ---------------------------------------------------------------------------
@@ -401,28 +425,34 @@ function layout() {
 // 4x4 Bayer matrix for ordered dithering of braille dots.
 const BAYER4 = [0, 8, 2, 10, 12, 4, 14, 6, 3, 11, 1, 9, 15, 7, 13, 5].map((v) => (v + 0.5) / 16);
 
-function grabFrame() {
-  const sw = sample.width, sh = sample.height;
-  sctx.save();
-  sctx.imageSmoothingEnabled = true;
-  sctx.imageSmoothingQuality = 'high';
-  if (ui.mirror.checked) {
-    sctx.translate(sw, 0);
-    sctx.scale(-1, 1);
+// Draw the current frame (or the `crop` window of it) into a sample canvas,
+// one pixel per cell (2x4 for braille), and apply the adjustments in place.
+// Used for the live view and, at much higher detail, for posters.
+function sampleFrame(sc, sx, crop, fx, mirror) {
+  const sw = sc.width, sh = sc.height;
+  sx.save();
+  sx.imageSmoothingEnabled = true;
+  sx.imageSmoothingQuality = 'high';
+  if (mirror) {
+    sx.translate(sw, 0);
+    sx.scale(-1, 1);
   }
   // Transparent GIF/PNG areas show as the background, not the last frame.
-  sctx.fillStyle = BG;
-  sctx.fillRect(0, 0, sw, sh);
-  sctx.drawImage(frameEl(), 0, 0, sw, sh);
-  sctx.restore();
+  sx.fillStyle = BG;
+  sx.fillRect(0, 0, sw, sh);
+  sx.drawImage(frameEl(), crop[0], crop[1], crop[2], crop[3], 0, 0, sw, sh);
+  sx.restore();
+  const img = sx.getImageData(0, 0, sw, sh);
+  adjustPixels(img.data, fx);
+  // Written back so the full-colour tint pass sees the adjusted colours.
+  sx.putImageData(img, 0, 0);
+  return img.data;
+}
 
-  // Apply the adjustments in place so the full-color tint pass below sees
-  // the same adjusted colors. This runs on the small sample canvas (one
-  // pixel per cell), so it's cheap.
-  const img = sctx.getImageData(0, 0, sw, sh);
-  const d = img.data;
+// Contrast, brightness, saturation, shadows/highlights, invert, plus the
+// sound effects' flash and hue shift.
+function adjustPixels(d, fx) {
   const c = +ui.contrast.value;
-  const fx = state.fx;
   const br = (+ui.bright.value + (fx ? fx.swell * 0.06 + fx.kick * 0.22 : 0)) * 255;
   const sat = +ui.sat.value * (fx ? 1 + fx.kick * 0.8 : 1);
   // Beat hue shift: a luminance-preserving hue rotation matrix.
@@ -464,8 +494,17 @@ function grabFrame() {
     d[p + 1] = clamp255(g);
     d[p + 2] = clamp255(b);
   }
-  sctx.putImageData(img, 0, 0);
-  return d;
+}
+
+// The part of the frame on screen: all of it, or for photos and GIFs a
+// moving window (pan & zoom, tilt).
+function viewCrop() {
+  const [W, H] = frameSize();
+  return photoCrop(W, H) || [0, 0, W, H];
+}
+
+function grabFrame() {
+  return sampleFrame(sample, sctx, viewCrop(), state.fx, ui.mirror.checked);
 }
 
 function render() {
@@ -473,20 +512,24 @@ function render() {
   const d = grabFrame();
   ctx.fillStyle = BG;
   ctx.fillRect(0, 0, out.width, out.height);
-
-  if (state.kind === 'emoji') renderEmoji(d);
-  else renderText(d);
+  // A render "job": where to draw and at what grid size. Posters use their
+  // own, much larger job.
+  const job = {
+    c: ctx, layer, lc: lctx, sample, d,
+    cols: state.cols, rows: state.rows, cellW: state.cellW, cellH: state.cellH,
+    grid: state.lastGlyphs, fx: state.fx, photo: photoFx(),
+  };
+  if (state.kind === 'emoji') renderEmoji(job);
+  else renderText(job);
 }
 
-function renderEmoji(d) {
+function renderEmoji(j) {
   const pal = state.palette;
-  const { cols, rows, cellW, cellH } = state;
+  const { c, d, cols, rows, cellW, cellH, grid, fx, photo } = j;
   const byBrightness = ui.match.value === 'brightness';
   const blank = ui.blank.checked;
   const n = pal.byLum.length;
-  const grid = state.lastGlyphs;
-  const fx = state.fx;
-  if (fx) zoomPunch(ctx, fx);
+  if (fx) zoomPunch(c, fx);
 
   for (let y = 0; y < rows; y++) {
     for (let x = 0; x < cols; x++) {
@@ -501,34 +544,34 @@ function renderEmoji(d) {
 
       let e;
       if (byBrightness) {
-        e = pal.byLum[Math.min(n - 1, ((l / 256) * n) | 0)];
+        let k = Math.min(n - 1, ((l / 256) * n) | 0);
+        if (photo?.twinkle && twinkles(x, y, photo.t)) k = Math.max(0, Math.min(n - 1, k + (hash3(x, y, 7) < 0.5 ? -1 : 1)));
+        e = pal.byLum[k];
       } else {
-        e = pal.entries[nearestEmoji(pal, r, g, b)];
+        const twin = photo?.twinkle && twinkles(x, y, photo.t);
+        e = pal.entries[twin ? secondNearestEmoji(pal, r, g, b) : nearestEmoji(pal, r, g, b)];
       }
       grid[y * cols + x] = e.i;
-      if (fx) drawCellFx(ctx, pal, e, x, y, cellW, cellH, fx, l / 255);
-      else ctx.drawImage(pal.atlas, e.sx, e.sy, pal.cw, pal.ch, x * cellW, y * cellH, cellW, cellH);
+      drawCell(c, pal, e, x, y, cellW, cellH, fx, photo, l / 255);
     }
   }
   if (fx) {
-    drawBeatOutlines(ctx, fx);
-    ctx.setTransform(1, 0, 0, 1, 0, 0);
+    drawBeatOutlines(c, fx);
+    c.setTransform(1, 0, 0, 1, 0, 0);
   }
 }
 
-function renderText(d) {
+function renderText(j) {
   const pal = state.palette;
-  const { cols, rows, cellW, cellH } = state;
+  const { c, layer: lay, lc, sample: samp, d, cols, rows, cellW, cellH, grid, fx, photo } = j;
   const es = pal.entries;
   const n = es.length;
-  const grid = state.lastGlyphs;
   const braille = state.kind === 'braille';
-  const sw = sample.width;
-  const fx = state.fx;
+  const sw = samp.width;
 
-  lctx.globalCompositeOperation = 'source-over';
-  lctx.clearRect(0, 0, layer.width, layer.height);
-  if (fx) zoomPunch(lctx, fx);
+  lc.globalCompositeOperation = 'source-over';
+  lc.clearRect(0, 0, lay.width, lay.height);
+  if (fx) zoomPunch(lc, fx);
 
   for (let y = 0; y < rows; y++) {
     for (let x = 0; x < cols; x++) {
@@ -543,37 +586,38 @@ function renderText(d) {
             if (l > BAYER4[(py & 3) * 4 + (px & 3)]) idx |= BRAILLE_BITS[row][col];
           }
         }
+        if (photo?.twinkle && twinkles(x, y, photo.t)) idx ^= 1 << ((hash3(x, y, 9) * 8) | 0);
       } else {
         const p = (y * cols + x) * 4;
         const l = luma(d[p], d[p + 1], d[p + 2]) / 256;
         idx = Math.min(n - 1, (l * n) | 0);
+        if (photo?.twinkle && twinkles(x, y, photo.t)) idx = Math.max(1, Math.min(n - 1, idx + (hash3(x, y, 7) < 0.5 ? -1 : 1)));
       }
       grid[y * cols + x] = idx;
       const e = es[idx];
       if (e.density === 0) continue;
-      if (fx) drawCellFx(lctx, pal, e, x, y, cellW, cellH, fx, braille ? 0.8 : idx / (n - 1));
-      else lctx.drawImage(pal.atlas, e.sx, e.sy, pal.cw, pal.ch, x * cellW, y * cellH, cellW, cellH);
+      drawCell(lc, pal, e, x, y, cellW, cellH, fx, photo, braille ? 0.8 : idx / (n - 1));
     }
   }
 
   // Tint the white glyph mask.
-  lctx.globalCompositeOperation = 'source-in';
+  lc.globalCompositeOperation = 'source-in';
   const ink = ui.ink.value;
   if (ink === 'full') {
-    lctx.imageSmoothingEnabled = false;
-    lctx.filter = 'saturate(1.3) brightness(1.25)';
-    lctx.drawImage(sample, 0, 0, layer.width, layer.height);
-    lctx.filter = 'none';
+    lc.imageSmoothingEnabled = false;
+    lc.filter = 'saturate(1.3) brightness(1.25)';
+    lc.drawImage(samp, 0, 0, lay.width, lay.height);
+    lc.filter = 'none';
   } else {
-    lctx.fillStyle = ink;
-    lctx.fillRect(0, 0, layer.width, layer.height);
+    lc.fillStyle = ink;
+    lc.fillRect(0, 0, lay.width, lay.height);
   }
-  if (fx) lctx.setTransform(1, 0, 0, 1, 0, 0);
-  ctx.drawImage(layer, 0, 0);
+  if (fx) lc.setTransform(1, 0, 0, 1, 0, 0);
+  c.drawImage(lay, 0, 0);
   if (fx) {
-    zoomPunch(ctx, fx);
-    drawBeatOutlines(ctx, fx);
-    ctx.setTransform(1, 0, 0, 1, 0, 0);
+    zoomPunch(c, fx);
+    drawBeatOutlines(c, fx);
+    c.setTransform(1, 0, 0, 1, 0, 0);
   }
 }
 
@@ -1009,6 +1053,203 @@ function gifTick(now) {
   gif.nextAt = now - gif.nextAt > 250 ? now + delay : gif.nextAt + delay;
 }
 
+// ---- Photo effects (photos and GIFs) ---------------------------------------
+
+const isPhotoSource = () => state.source === 'file' && (state.fileKind === 'image' || state.fileKind === 'gif');
+
+// Cheap, repeatable per-cell randomness.
+function hash3(x, y, s) {
+  let h = Math.imul(x, 374761393) ^ Math.imul(y, 668265263) ^ Math.imul(s, 1274126177);
+  h = Math.imul(h ^ (h >>> 13), 1274126177);
+  return ((h ^ (h >>> 16)) >>> 0) / 4294967296;
+}
+
+const ASSEMBLE_MS = 1800;
+const photoState = { assembleAt: -Infinity };
+// Tilt: target (tx, ty) from the motion sensor or the mouse, eased into (x, y).
+const motion = { x: 0, y: 0, tx: 0, ty: 0, sensor: false };
+
+// Pan & zoom ("Ken Burns") and tilt move a window over the picture.
+function photoCrop(W, H) {
+  if (!isPhotoSource()) return null;
+  const kb = ui.kenBurns.checked, tilt = ui.tilt.checked;
+  if (!kb && !tilt) return null;
+  const t = performance.now() / 1000, TAU = Math.PI * 2;
+  let z = 1, cx = 0.5, cy = 0.5;
+  if (kb) {
+    z = 1.2 + 0.14 * Math.sin((t * TAU) / 22);
+    cx += 0.1 * Math.sin((t * TAU) / 31);
+    cy += 0.08 * Math.sin((t * TAU) / 26 + 1.3);
+  }
+  if (tilt) {
+    motion.x += (motion.tx - motion.x) * 0.15;
+    motion.y += (motion.ty - motion.y) * 0.15;
+    z = Math.max(z, 1.18);
+    cx += motion.x * 0.08;
+    cy += motion.y * 0.08;
+  }
+  const w = W / z, h = H / z;
+  return [Math.min(Math.max(cx * W - w / 2, 0), W - w), Math.min(Math.max(cy * H - h / 2, 0), H - h), w, h];
+}
+
+// Per-frame photo effects for the renderer, or null when there are none.
+function photoFx() {
+  if (!isPhotoSource()) return null;
+  const now = performance.now();
+  const asm = (now - photoState.assembleAt) / ASSEMBLE_MS;
+  const twinkle = ui.twinkle.checked;
+  if (!twinkle && asm >= 1) return null;
+  return { t: now / 1000, twinkle, asm: asm < 1 ? asm : null, w: out.width, h: out.height };
+}
+
+// Twinkle: now and then a cell shimmers to a neighbouring glyph.
+function twinkles(x, y, t) {
+  return hash3(x, y, Math.floor(t * 2 + hash3(x, y, 1) * 8)) < 0.12;
+}
+
+const easeOutBack = (p) => 1 + 2.70158 * (p - 1) ** 3 + 1.70158 * (p - 1) ** 2;
+
+// Scale and offset of one cell for the photo effects.
+function photoCell(ph, x, y) {
+  let k = 1, ox = 0, oy = 0;
+  if (ph.twinkle) {
+    // Glints: a quick swell on a few cells at a time.
+    const s = Math.sin(ph.t * 2.4 + hash3(x, y, 3) * 40);
+    if (s > 0.92) k += (s - 0.92) * 5;
+  }
+  if (ph.asm !== null) {
+    // Assemble: each glyph flies in from a scattered spot, staggered.
+    const p = Math.min(1, Math.max(0, (ph.asm - hash3(x, y, 5) * 0.55) / 0.45));
+    if (p <= 0) return { k: 0, ox: 0, oy: 0 };
+    const a = hash3(x, y, 6) * Math.PI * 2;
+    const dist = (0.25 + 0.5 * hash3(x, y, 8)) * Math.max(ph.w, ph.h);
+    const left = (1 - p) ** 3;
+    ox = Math.cos(a) * dist * left;
+    oy = Math.sin(a) * dist * left;
+    k *= Math.max(0, easeOutBack(p));
+  }
+  return { k, ox, oy };
+}
+
+function startAssemble() {
+  photoState.assembleAt = performance.now();
+}
+
+function onOrientation(e) {
+  if (e.gamma == null || e.beta == null) return;
+  motion.sensor = true;
+  // Map to screen axes; a phone held upright leans back about 45°.
+  const angle = screen.orientation?.angle ?? window.orientation ?? 0;
+  let gx = e.gamma, gy = e.beta - 45;
+  if (angle === 90) [gx, gy] = [e.beta, -e.gamma];
+  else if (angle === 270 || angle === -90) [gx, gy] = [-e.beta, e.gamma];
+  motion.tx = Math.max(-1, Math.min(1, gx / 25));
+  motion.ty = Math.max(-1, Math.min(1, gy / 25));
+}
+
+async function enableTilt() {
+  // iOS asks for motion permission, and only from a tap.
+  if (typeof DeviceOrientationEvent !== 'undefined' && typeof DeviceOrientationEvent.requestPermission === 'function') {
+    try {
+      if ((await DeviceOrientationEvent.requestPermission()) !== 'granted') throw new Error('denied');
+    } catch (err) {
+      dbg('motion permission failed:', err.message);
+      ui.tilt.checked = false;
+      toast('Motion permission was denied');
+      return;
+    }
+  }
+  window.addEventListener('deviceorientation', onOrientation);
+  toast('📱 Tilt your phone (or move the mouse over the picture)');
+}
+
+// ---- Poster: a high-detail render of the current frame ------------------------
+
+async function makePoster() {
+  if (!hasSource() || !frameReady()) {
+    toast('Pick a photo first');
+    return;
+  }
+  ui.makePoster.disabled = true;
+  ui.makePoster.textContent = 'Making poster…';
+  await new Promise((r) => setTimeout(r, 30)); // let the label update first
+  try {
+    const [W, H] = frameSize();
+    let pw, ph;
+    if (ui.posterSize.value === 'wallpaper') [pw, ph] = [1290, 2796];
+    else if (ui.posterSize.value === 'square') [pw, ph] = [2048, 2048];
+    else {
+      const k = 3840 / Math.max(W, H);
+      [pw, ph] = [Math.round(W * k), Math.round(H * k)];
+    }
+    // Fill the poster shape, cropping the picture's edges if needed.
+    const ar = pw / ph;
+    const cw = W / H > ar ? H * ar : W, ch = W / H > ar ? H : W / ar;
+    const crop = [(W - cw) / 2, (H - ch) / 2, cw, ch];
+
+    const cols = +ui.posterCols.value;
+    const aspect = state.kind === 'emoji' ? 1 : state.kind === 'braille' ? BRAILLE_ASPECT : TEXT_ASPECT;
+    const cellW = pw / cols;
+    const rows = Math.max(1, Math.round(ph / (cellW / aspect)));
+    const cellH = ph / rows;
+    const sub = state.kind === 'braille' ? [2, 4] : [1, 1];
+
+    const sc = document.createElement('canvas');
+    sc.width = cols * sub[0];
+    sc.height = rows * sub[1];
+    const sx = sc.getContext('2d', { willReadFrequently: true });
+    const d = sampleFrame(sc, sx, crop, null, ui.mirror.checked);
+
+    const pc = document.createElement('canvas');
+    pc.width = pw;
+    pc.height = ph;
+    const pctx = pc.getContext('2d');
+    pctx.fillStyle = BG;
+    pctx.fillRect(0, 0, pw, ph);
+    const job = { c: pctx, sample: sc, d, cols, rows, cellW, cellH, grid: new Int16Array(cols * rows), fx: null, photo: null };
+    if (state.kind === 'emoji') {
+      renderEmoji(job);
+    } else {
+      job.layer = document.createElement('canvas');
+      job.layer.width = pw;
+      job.layer.height = ph;
+      job.lc = job.layer.getContext('2d');
+      renderText(job);
+      job.layer.width = job.layer.height = 0;
+    }
+    const blob = await new Promise((r) => pc.toBlob(r, 'image/png'));
+    pc.width = pc.height = 0; // free the memory now (iOS caps canvas memory)
+    dbg(`poster: ${pw}x${ph}, ${cols}x${rows} cells, ${(blob.size / 1e6).toFixed(1)} MB`);
+    showPoster(blob, pw, ph, cols);
+  } catch (err) {
+    dbg('poster failed:', err.name, err.message);
+    toast('Couldn’t make the poster');
+  } finally {
+    ui.makePoster.disabled = false;
+    ui.makePoster.textContent = '🖼 Make poster';
+  }
+}
+
+const poster = { url: null, file: null };
+
+function showPoster(blob, w, h, cols) {
+  if (poster.url) URL.revokeObjectURL(poster.url);
+  poster.url = URL.createObjectURL(blob);
+  poster.file = new File([blob], `emoji-fied-poster-${Date.now()}.png`, { type: 'image/png' });
+  ui.posterImg.src = poster.url;
+  ui.posterInfo.textContent = `PNG · ${w}×${h} · ${cols} columns · ${(blob.size / 1e6).toFixed(1)} MB`;
+  ui.posterShare.hidden = !navigator.canShare?.({ files: [poster.file] });
+  hostOverlays();
+  ui.posterSheet.hidden = false;
+}
+
+function closePoster() {
+  ui.posterSheet.hidden = true;
+  ui.posterImg.removeAttribute('src');
+  if (poster.url) URL.revokeObjectURL(poster.url);
+  poster.url = poster.file = null;
+}
+
 // Stop whatever is showing (camera/screen tracks, or the file).
 function stopCurrentSource() {
   state.stream?.getTracks().forEach((t) => t.stop());
@@ -1032,6 +1273,7 @@ function stopCurrentSource() {
 function updateSourceUI() {
   for (const b of ui.sourceButtons) b.setAttribute('aria-pressed', String(b.dataset.source === state.source));
   ui.flip.disabled = state.source !== 'camera';
+  ui.photoPanel.hidden = !isPhotoSource();
 }
 
 async function useCamera() {
@@ -1133,6 +1375,7 @@ async function playImage(file, isGif) {
   ui.status.textContent = '';
   layout();
   connectSoundInput().catch((err) => dbg('sound input failed:', err.name, err.message));
+  startAssemble();
   toast(decoded ? `🎞 ${file.name} · ${decoded.frames.length} frames` : `🖼 ${file.name}`);
 }
 
@@ -1522,10 +1765,28 @@ function zoomPunch(c, fx) {
   c.setTransform(z, 0, 0, z, fx.cx * (1 - z), fx.cy * (1 - z));
 }
 
-// Draw one glyph with the sound effects: swell (brighter cells more),
-// passing beat ripples, and a shake on beats.
-function drawCellFx(c, pal, e, x, y, cellW, cellH, fx, bright) {
-  let k = 1 + fx.swell * (0.3 + 0.7 * bright);
+// Draw one glyph. Without effects it's a plain blit; with them it adds the
+// sound effects (swell, brighter cells more; passing beat waves; shake) and
+// the photo effects (twinkle glints, assemble fly-in).
+function drawCell(c, pal, e, x, y, cellW, cellH, fx, photo, bright) {
+  if (!fx && !photo) {
+    c.drawImage(pal.atlas, e.sx, e.sy, pal.cw, pal.ch, x * cellW, y * cellH, cellW, cellH);
+    return;
+  }
+  let k = 1, ox = 0, oy = 0;
+  if (photo) {
+    const pc = photoCell(photo, x, y);
+    if (pc.k <= 0.01) return; // still waiting to fly in
+    k = pc.k;
+    ox = pc.ox;
+    oy = pc.oy;
+  }
+  if (!fx) {
+    const w = cellW * k, h = cellH * k;
+    c.drawImage(pal.atlas, e.sx, e.sy, pal.cw, pal.ch, x * cellW - (w - cellW) / 2 + ox, y * cellH - (h - cellH) / 2 + oy, w, h);
+    return;
+  }
+  k *= 1 + fx.swell * (0.3 + 0.7 * bright);
   if (fx.ripples.length) {
     const px = (x + 0.5) * cellW, py = (y + 0.5) * cellH;
     for (const rp of fx.ripples) {
@@ -1534,7 +1795,7 @@ function drawCellFx(c, pal, e, x, y, cellW, cellH, fx, bright) {
     }
   }
   const w = cellW * k, h = cellH * k;
-  let dx = x * cellW - (w - cellW) / 2, dy = y * cellH - (h - cellH) / 2;
+  let dx = x * cellW - (w - cellW) / 2 + ox, dy = y * cellH - (h - cellH) / 2 + oy;
   if (fx.kick > 0.05) {
     dx += (Math.random() - 0.5) * cellW * fx.kick;
     dy += (Math.random() - 0.5) * cellH * fx.kick;
@@ -1701,7 +1962,7 @@ const isFull = () => !!fullscreenElement() || document.body.classList.contains('
 // toast and the clip preview move inside it while it's active.
 function hostOverlays() {
   const host = fullscreenElement() || document.body;
-  for (const el of [ui.clip, ui.player, ui.toast]) if (el.parentNode !== host) host.appendChild(el);
+  for (const el of [ui.clip, ui.player, ui.posterSheet, ui.toast]) if (el.parentNode !== host) host.appendChild(el);
 }
 
 async function enterFullscreen() {
@@ -1901,6 +2162,7 @@ const ADJUSTMENTS = [
 function syncLabels() {
   for (const [input, output, fmt] of ADJUSTMENTS) output.textContent = fmt(+input.value);
   ui.sensOut.textContent = `${(+ui.sens.value).toFixed(1)}×`;
+  ui.posterColsOut.textContent = `${ui.posterCols.value} cols`;
   ui.fxOut.textContent = `${Math.round(+ui.fxStrength.value * 100)}%`;
 }
 
@@ -1984,6 +2246,38 @@ for (const b of ui.sourceButtons) {
 }
 ui.startFile.addEventListener('click', chooseFile);
 ui.startScreen.addEventListener('click', startScreen);
+ui.assemble.addEventListener('click', startAssemble);
+ui.tilt.addEventListener('change', () => {
+  if (ui.tilt.checked) enableTilt();
+  else {
+    window.removeEventListener('deviceorientation', onOrientation);
+    motion.tx = motion.ty = 0;
+  }
+});
+// Without a motion sensor (computers), the mouse over the picture tilts it.
+ui.stage.addEventListener('pointermove', (e) => {
+  if (!ui.tilt.checked || motion.sensor) return;
+  const r = ui.stage.getBoundingClientRect();
+  motion.tx = ((e.clientX - r.left) / r.width) * 2 - 1;
+  motion.ty = ((e.clientY - r.top) / r.height) * 2 - 1;
+});
+ui.posterCols.addEventListener('input', syncLabels);
+ui.makePoster.addEventListener('click', makePoster);
+ui.posterClose.addEventListener('click', closePoster);
+ui.posterDownload.addEventListener('click', () => {
+  const a = document.createElement('a');
+  a.href = poster.url;
+  a.download = poster.file.name;
+  a.click();
+  toast('Poster downloaded');
+});
+ui.posterShare.addEventListener('click', async () => {
+  try {
+    await navigator.share({ files: [poster.file], title: 'emoji·fied poster' });
+  } catch (err) {
+    if (err.name !== 'AbortError') toast('Sharing failed, try Download');
+  }
+});
 ui.fileInput.addEventListener('change', () => {
   const file = ui.fileInput.files[0];
   ui.fileInput.value = ''; // so picking the same file again still fires
@@ -2013,7 +2307,8 @@ document.addEventListener('keydown', (e) => {
   if (e.key === 'r') ui.record.click();
   if (e.key === 'd') randomize();
   if (e.key === 'f') switchCamera();
-  if (e.key === 'Escape' && !ui.player.hidden) closePlayer();
+  if (e.key === 'Escape' && !ui.posterSheet.hidden) closePoster();
+  else if (e.key === 'Escape' && !ui.player.hidden) closePlayer();
   else if (e.key === 'Escape' && !ui.clip.hidden) closeClip();
   else if (e.key === 'Escape' && document.body.classList.contains('immersive')) exitFullscreen();
 });
@@ -2025,5 +2320,5 @@ try {
 } catch (err) {
   ui.error.textContent = `Setup failed: ${err.message}`;
 }
-window.emojiFiedReady = '18';
-dbg('app.js v18 initialised');
+window.emojiFiedReady = '19';
+dbg('app.js v19 initialised');

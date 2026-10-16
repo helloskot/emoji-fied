@@ -11,6 +11,11 @@ No build step, no dependencies, and no video ever leaves your device.
   (`gif.js`), so they animate in every browser, including Safari. A video's
   soundtrack plays, drives *React to sound* (no microphone needed) and goes
   into recordings.
+  Photos and GIFs get **photo effects**: a slow 🎥 pan & zoom, 📱 tilt to move
+  (motion sensor, or the mouse on a computer), ✨ twinkle (glyphs shimmer to
+  similar ones, with glints), and 🧩 assemble (the picture builds itself from
+  scattered glyphs). **🖼 Make poster** renders a sharp, high-detail PNG (4K,
+  phone wallpaper or square, up to 400 columns) to save or share.
 - **🖥 Screen / tab** (computers only; iPhone Safari can't share the screen):
   play something, a YouTube video for example, in another tab and share that
   tab to filter it live. Tick *Share tab audio* to react to its sound.

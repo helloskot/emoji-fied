@@ -13,7 +13,7 @@
   <link rel="apple-touch-icon" href="icons/icon-180.png" />
   <title>Emoji-fied</title>
   <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🤩</text></svg>" />
-  <link rel="stylesheet" href="style.css?v=18" />
+  <link rel="stylesheet" href="style.css?v=19" />
 </head>
 <body>
   <header>
@@ -56,7 +56,7 @@
           </div>
           <p class="status" id="status" aria-live="polite"></p>
           <p class="error" id="error" role="alert"></p>
-          <p class="note">Everything runs in your browser. No video leaves your device. <span class="version">v18</span></p>
+          <p class="note">Everything runs in your browser. No video leaves your device. <span class="version">v19</span></p>
         </div>
       </div>
     </div>
@@ -70,6 +70,29 @@
           <button type="button" data-source="screen" aria-pressed="false">🖥 Screen</button>
         </div>
         <input id="fileInput" type="file" accept="video/*,image/*" hidden />
+      </div>
+
+      <div class="photo-panel" id="photoPanel" hidden>
+        <span class="field-label">Photo effects</span>
+        <div class="toggles">
+          <label><input id="kenBurns" type="checkbox" checked /> 🎥 Pan &amp; zoom</label>
+          <label><input id="tilt" type="checkbox" /> 📱 Tilt to move</label>
+          <label><input id="twinkle" type="checkbox" /> ✨ Twinkle</label>
+        </div>
+        <button id="assemble" type="button">🧩 Assemble again</button>
+        <div class="poster-box">
+          <span class="field-label">Poster: a sharp, high-detail picture to save</span>
+          <select id="posterSize" aria-label="Poster size">
+            <option value="4k">4K (3840 px)</option>
+            <option value="wallpaper">Phone wallpaper (1290×2796)</option>
+            <option value="square">Square (2048 px)</option>
+          </select>
+          <label class="field">
+            <span>Poster detail <output id="posterColsOut"></output></span>
+            <input id="posterCols" type="range" min="80" max="400" value="180" />
+          </label>
+          <button id="makePoster" type="button" class="primary">🖼 Make poster</button>
+        </div>
       </div>
 
       <div class="field">
@@ -247,6 +270,18 @@
     </div>
   </div>
 
+  <div class="clip" id="posterSheet" hidden>
+    <div class="clip-card" role="dialog" aria-label="Poster">
+      <img id="posterImg" alt="Your emoji poster" />
+      <p class="clip-info" id="posterInfo"></p>
+      <div class="clip-actions">
+        <button id="posterShare" class="primary">Save / Share</button>
+        <button id="posterDownload">Download</button>
+        <button id="posterClose">Close</button>
+      </div>
+    </div>
+  </div>
+
   <div class="toast" id="toast" role="status"></div>
 
   <script>
@@ -302,7 +337,7 @@
             function () { var r = document.createRange(); r.selectNodeContents(pre); var s = getSelection(); s.removeAllRanges(); s.addRange(r); }
           );
         });
-        dbg('page v18', navigator.userAgent);
+        dbg('page v19', navigator.userAgent);
         dbg('secure=' + window.isSecureContext, 'mediaDevices=' + !!navigator.mediaDevices,
             'getUserMedia=' + !!(navigator.mediaDevices && navigator.mediaDevices.getUserMedia));
         if (navigator.permissions && navigator.permissions.query) {
@@ -323,11 +358,11 @@
       window.addEventListener('unhandledrejection', function (e) { dbg('REJECTION', String(e.reason)); show((e.reason && e.reason.message) || String(e.reason)); });
       window.addEventListener('load', function () {
         dbg('load event, app ready = ' + window.emojiFiedReady);
-        if (window.emojiFiedReady !== '18') show('an old or broken copy of the app loaded. Close this tab and open the link again.');
+        if (window.emojiFiedReady !== '19') show('an old or broken copy of the app loaded. Close this tab and open the link again.');
       });
     })();
   </script>
-  <script src="gif.js?v=18"></script>
-  <script src="app.js?v=18"></script>
+  <script src="gif.js?v=19"></script>
+  <script src="app.js?v=19"></script>
 </body>
 </html>
