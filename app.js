@@ -106,6 +106,14 @@ const ui = {
   full: $('#full'),
   exitFull: $('#exitFull'),
   airplay: $('#airplay'),
+  player: $('#player'),
+  liveVideo: $('#liveVideo'),
+  playerAirplay: $('#playerAirplay'),
+  playerPip: $('#playerPip'),
+  playerFull: $('#playerFull'),
+  playerMirror: $('#playerMirror'),
+  playerClose: $('#playerClose'),
+  clipAirplay: $('#clipAirplay'),
   tvHint: $('#tvHint'),
   tvSteps: $('#tvSteps'),
   tvHintClose: $('#tvHintClose'),
@@ -713,6 +721,7 @@ function finishRecording(recorder, canvasStream, type, withAudio) {
   ui.clipVideo.play().catch(() => {});
   ui.clipInfo.textContent = `${ext.toUpperCase()} · ${(blob.size / 1e6).toFixed(1)} MB${withAudio ? ' · with sound' : ''}`;
   ui.clipShare.hidden = !navigator.canShare?.({ files: [rec.file] });
+  ui.clipAirplay.hidden = !canAirplay(ui.clipVideo);
   hostOverlays();
   ui.clip.hidden = false;
 }
@@ -1533,7 +1542,7 @@ const isFull = () => !!fullscreenElement() || document.body.classList.contains('
 // toast and the clip preview move inside it while it's active.
 function hostOverlays() {
   const host = fullscreenElement() || document.body;
-  for (const el of [ui.clip, ui.toast]) if (el.parentNode !== host) host.appendChild(el);
+  for (const el of [ui.clip, ui.player, ui.toast]) if (el.parentNode !== host) host.appendChild(el);
 }
 
 async function enterFullscreen() {
@@ -1621,6 +1630,95 @@ function tvSteps() {
   ];
 }
 
+// ---- Live player: the art in a native <video> -------------------------------
+// The output canvas is streamed into a native video element, which gets the
+// system's AirPlay picker, Picture in Picture and true full screen (on iPhone
+// too, via webkitEnterFullscreen). Whether AirPlay accepts a live,
+// canvas-generated stream is up to the OS, so the outcome is logged.
+
+const live = { stream: null };
+
+const hasAirplayPicker = (v) => typeof v.webkitShowPlaybackTargetPicker === 'function';
+const canAirplay = (v) => hasAirplayPicker(v) || typeof v.remote?.prompt === 'function';
+const canPip = (v) =>
+  (document.pictureInPictureEnabled && typeof v.requestPictureInPicture === 'function') ||
+  !!v.webkitSupportsPresentationMode?.('picture-in-picture');
+const inPip = (v) => document.pictureInPictureElement === v || v.webkitPresentationMode === 'picture-in-picture';
+
+async function showAirplay(v) {
+  if (hasAirplayPicker(v)) {
+    v.webkitShowPlaybackTargetPicker();
+    dbg(`AirPlay picker shown (${v.id})`);
+    return;
+  }
+  try {
+    await v.remote.prompt();
+  } catch (err) {
+    dbg(`remote playback prompt failed (${v.id}):`, err.name, err.message);
+    if (err.name === 'NotSupportedError') toast('This browser can’t cast this picture. Try Screen Mirroring');
+  }
+}
+
+function openPlayer() {
+  if (!hasSource()) {
+    toast('Start the camera or a video first');
+    return;
+  }
+  const v = ui.liveVideo;
+  if (!live.stream) {
+    live.stream = out.captureStream(30);
+    v.srcObject = live.stream;
+  }
+  v.play().catch((err) => dbg('live player play failed:', err.name, err.message));
+  ui.playerAirplay.hidden = !canAirplay(v);
+  ui.playerPip.hidden = !canPip(v);
+  ui.playerFull.hidden = !(v.webkitEnterFullscreen || v.requestFullscreen);
+  hostOverlays();
+  ui.player.hidden = false;
+  dbg(`live player opened: airplay picker=${hasAirplayPicker(v)}, remote=${typeof v.remote?.prompt === 'function'}, pip=${canPip(v)}`);
+}
+
+function stopLive() {
+  live.stream?.getTracks().forEach((t) => t.stop());
+  live.stream = null;
+  ui.liveVideo.srcObject = null;
+}
+
+// Keep streaming while it's in Picture in Picture or on a TV.
+function closePlayer() {
+  ui.player.hidden = true;
+  const v = ui.liveVideo;
+  if (!inPip(v) && !v.webkitCurrentPlaybackTargetIsWireless) stopLive();
+}
+
+async function togglePip() {
+  const v = ui.liveVideo;
+  try {
+    if (inPip(v)) {
+      if (document.pictureInPictureElement) await document.exitPictureInPicture();
+      else v.webkitSetPresentationMode('inline');
+    } else if (document.pictureInPictureEnabled && v.requestPictureInPicture) {
+      await v.requestPictureInPicture();
+    } else {
+      v.webkitSetPresentationMode('picture-in-picture');
+    }
+  } catch (err) {
+    dbg('picture in picture failed:', err.name, err.message);
+    toast('Picture in Picture isn’t available here');
+  }
+}
+
+function playerFullscreen() {
+  const v = ui.liveVideo;
+  try {
+    // iPhone only allows full screen for video, through its own player.
+    if (document.fullscreenEnabled && v.requestFullscreen) v.requestFullscreen();
+    else v.webkitEnterFullscreen();
+  } catch (err) {
+    dbg('player full screen failed:', err.name, err.message);
+  }
+}
+
 async function showOnTv() {
   await enterFullscreen();
   ui.tvSteps.innerHTML = tvSteps().map((step) => `<li>${step}</li>`).join('');
@@ -1681,7 +1779,30 @@ ui.flip.addEventListener('click', switchCamera);
 ui.flipFab.addEventListener('click', switchCamera);
 ui.full.addEventListener('click', enterFullscreen);
 ui.exitFull.addEventListener('click', exitFullscreen);
-ui.airplay.addEventListener('click', showOnTv);
+ui.airplay.addEventListener('click', openPlayer);
+ui.playerAirplay.addEventListener('click', () => showAirplay(ui.liveVideo));
+ui.playerPip.addEventListener('click', togglePip);
+ui.playerFull.addEventListener('click', playerFullscreen);
+ui.playerClose.addEventListener('click', closePlayer);
+ui.playerMirror.addEventListener('click', () => {
+  closePlayer();
+  showOnTv();
+});
+ui.clipAirplay.addEventListener('click', () => showAirplay(ui.clipVideo));
+for (const v of [ui.liveVideo, ui.clipVideo]) {
+  v.addEventListener('webkitplaybacktargetavailabilitychanged', (e) => dbg(`AirPlay targets (${v.id}): ${e.availability}`));
+  v.addEventListener('webkitcurrentplaybacktargetiswirelesschanged', () => {
+    const on = v.webkitCurrentPlaybackTargetIsWireless;
+    dbg(`AirPlay (${v.id}): ${on ? 'playing on a TV' : 'back on this device'}`);
+    toast(on ? '📺 Playing on your TV' : '📺 AirPlay ended');
+    if (!on && v === ui.liveVideo && ui.player.hidden && !inPip(v)) stopLive();
+  });
+}
+ui.liveVideo.addEventListener('leavepictureinpicture', () => ui.player.hidden && stopLive());
+ui.liveVideo.addEventListener('webkitpresentationmodechanged', () => {
+  dbg(`live player presentation: ${ui.liveVideo.webkitPresentationMode}`);
+  if (ui.player.hidden && !inPip(ui.liveVideo) && !ui.liveVideo.webkitCurrentPlaybackTargetIsWireless) stopLive();
+});
 ui.tvHintClose.addEventListener('click', () => (ui.tvHint.hidden = true));
 document.addEventListener('fullscreenchange', onFullscreenChange);
 document.addEventListener('webkitfullscreenchange', onFullscreenChange);
@@ -1733,7 +1854,8 @@ document.addEventListener('keydown', (e) => {
   if (e.key === 'r') ui.record.click();
   if (e.key === 'd') randomize();
   if (e.key === 'f') switchCamera();
-  if (e.key === 'Escape' && !ui.clip.hidden) closeClip();
+  if (e.key === 'Escape' && !ui.player.hidden) closePlayer();
+  else if (e.key === 'Escape' && !ui.clip.hidden) closeClip();
   else if (e.key === 'Escape' && document.body.classList.contains('immersive')) exitFullscreen();
 });
 
@@ -1744,5 +1866,5 @@ try {
 } catch (err) {
   ui.error.textContent = `Setup failed: ${err.message}`;
 }
-window.emojiFiedReady = '16';
-dbg('app.js v16 initialised');
+window.emojiFiedReady = '17';
+dbg('app.js v17 initialised');

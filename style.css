@@ -390,9 +390,9 @@ button:disabled { opacity: 0.5; cursor: default; }
   border-radius: 10px;
 }
 .clip-info { margin: 0; color: var(--muted); font-size: 13px; text-align: center; }
-.clip-actions { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 8px; }
+.clip-actions { display: grid; grid-template-columns: repeat(auto-fit, minmax(96px, 1fr)); gap: 8px; }
 .clip-actions button[hidden] { display: none; }
-.clip-actions:has(button[hidden]) { grid-template-columns: 1fr 1fr; }
+#player .reset { justify-self: center; }
 
 .toast {
   position: fixed;
