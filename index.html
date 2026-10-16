@@ -6,7 +6,7 @@
   <meta name="theme-color" content="#0b0b10" />
   <title>Emoji-fied</title>
   <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🤩</text></svg>" />
-  <link rel="stylesheet" href="style.css?v=4" />
+  <link rel="stylesheet" href="style.css?v=5" />
 </head>
 <body>
   <header>
@@ -26,7 +26,7 @@
           <button id="start" class="primary">Start camera</button>
           <p class="status" id="status" aria-live="polite"></p>
           <p class="error" id="error" role="alert"></p>
-          <p class="note">Everything runs in your browser. No video leaves your device. <span class="version">v4</span></p>
+          <p class="note">Everything runs in your browser. No video leaves your device. <span class="version">v5</span></p>
         </div>
       </div>
     </div>
@@ -125,6 +125,7 @@
       // Diagnostic log, shown when the URL has ?debug
       var DEBUG = /[?&]debug\b/.test(location.search);
       var lines = [];
+      var carried = 0; // lines copied from a previous (crashed) page
       var t0 = Date.now();
       var pre = null;
       window.dbg = function () {
@@ -133,6 +134,8 @@
           return typeof a === 'string' ? a : JSON.stringify(a);
         }).join(' ');
         lines.push(((Date.now() - t0) / 1000).toFixed(2) + 's ' + msg);
+        // Persist so the log survives Safari reloading a crashed tab.
+        try { sessionStorage.setItem('emojiFiedLog', lines.slice(carried).join('\n')); } catch (e) {}
         if (pre) pre.textContent = lines.join('\n');
       };
       function describe(n) {
@@ -145,6 +148,21 @@
         box.innerHTML = '<div><strong>Diagnostics</strong> <button type="button">Copy log</button></div><pre></pre>';
         document.body.appendChild(box);
         pre = box.querySelector('pre');
+        var previous = null;
+        try {
+          previous = sessionStorage.getItem('emojiFiedLog');
+          if (sessionStorage.getItem('emojiFiedClean') === '1') previous = null;
+          sessionStorage.setItem('emojiFiedClean', '0');
+        } catch (e) {}
+        window.addEventListener('pagehide', function () {
+          try { sessionStorage.setItem('emojiFiedClean', '1'); } catch (e) {}
+        });
+        if (previous) {
+          lines.push('=== Previous page ended without closing normally (probably crashed). Its log: ===');
+          previous.split('\n').forEach(function (l) { lines.push('  ' + l); });
+          lines.push('=== Current page ===');
+          carried = lines.length;
+        }
         box.querySelector('button').addEventListener('click', function () {
           var text = lines.join('\n');
           (navigator.clipboard ? navigator.clipboard.writeText(text) : Promise.reject()).then(
@@ -152,7 +170,7 @@
             function () { var r = document.createRange(); r.selectNodeContents(pre); var s = getSelection(); s.removeAllRanges(); s.addRange(r); }
           );
         });
-        dbg('page v4', navigator.userAgent);
+        dbg('page v5', navigator.userAgent);
         dbg('secure=' + window.isSecureContext, 'mediaDevices=' + !!navigator.mediaDevices,
             'getUserMedia=' + !!(navigator.mediaDevices && navigator.mediaDevices.getUserMedia));
         if (navigator.permissions && navigator.permissions.query) {
@@ -173,10 +191,10 @@
       window.addEventListener('unhandledrejection', function (e) { dbg('REJECTION', String(e.reason)); show((e.reason && e.reason.message) || String(e.reason)); });
       window.addEventListener('load', function () {
         dbg('load event, app ready = ' + window.emojiFiedReady);
-        if (window.emojiFiedReady !== '4') show('an old or broken copy of the app loaded. Close this tab and open the link again.');
+        if (window.emojiFiedReady !== '5') show('an old or broken copy of the app loaded. Close this tab and open the link again.');
       });
     })();
   </script>
-  <script src="app.js?v=4"></script>
+  <script src="app.js?v=5"></script>
 </body>
 </html>
