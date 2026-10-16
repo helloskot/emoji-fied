@@ -25,10 +25,16 @@ recorded clips include the audio.
 Front/back camera: the switch button over the camera view (or `F`); mirroring
 follows the camera and recordings carry on through a switch.
 
+Full screen (⛶) and 📺 AirPlay: full screen fills the screen, using native full
+screen where the browser allows it (iPhone Safari doesn't, so it fills the page),
+and keeps the screen awake. Web pages can't AirPlay a live camera effect, so the
+AirPlay button goes full screen and shows how to Screen Mirror to an Apple TV.
+For true full screen on iPhone, use Share → **Add to Home Screen**.
+
 Extras: 🎲 randomize (`D`: random style, ink, detail and tone, sometimes a
 random custom emoji set), detail slider, adjustments (contrast, brightness,
 saturation, shadows, highlights, with reset), invert, mirror, front/back camera
-flip, pause (`Space`), PNG snapshot (`S`), **video clips** (record button over the camera view or `R`, up to 60 s;
+flip, pause (`Space`), PNG snapshot (`S`), **video clips** (Record button in the controls or `R`, up to 60 s;
 MP4 on Safari, with Save/Share to Photos on iPhone) and **Copy text** to paste
 the frame as plain emoji/unicode text.
 
