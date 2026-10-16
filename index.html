@@ -6,7 +6,7 @@
   <meta name="theme-color" content="#0b0b10" />
   <title>Emoji-fied</title>
   <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🤩</text></svg>" />
-  <link rel="stylesheet" href="style.css?v=6" />
+  <link rel="stylesheet" href="style.css?v=7" />
 </head>
 <body>
   <header>
@@ -26,14 +26,15 @@
           <button id="start" class="primary">Start camera</button>
           <p class="status" id="status" aria-live="polite"></p>
           <p class="error" id="error" role="alert"></p>
-          <p class="note">Everything runs in your browser. No video leaves your device. <span class="version">v6</span></p>
+          <p class="note">Everything runs in your browser. No video leaves your device. <span class="version">v7</span></p>
         </div>
       </div>
     </div>
 
     <section class="controls" aria-label="Filter controls">
-      <label class="field">
-        <span>Style</span>
+      <div class="field">
+        <label for="style">Style</label>
+        <div class="style-row">
         <select id="style">
           <optgroup label="Emoji">
             <option value="emoji:everything" selected>Everything</option>
@@ -58,7 +59,9 @@
             <option value="custom">Custom…</option>
           </optgroup>
         </select>
-      </label>
+        <button id="random" class="random" type="button" title="Randomize the look (D)" aria-label="Randomize">🎲</button>
+        </div>
+      </div>
 
       <label class="field" id="customField" hidden>
         <span>Characters</span>
@@ -183,7 +186,7 @@
             function () { var r = document.createRange(); r.selectNodeContents(pre); var s = getSelection(); s.removeAllRanges(); s.addRange(r); }
           );
         });
-        dbg('page v6', navigator.userAgent);
+        dbg('page v7', navigator.userAgent);
         dbg('secure=' + window.isSecureContext, 'mediaDevices=' + !!navigator.mediaDevices,
             'getUserMedia=' + !!(navigator.mediaDevices && navigator.mediaDevices.getUserMedia));
         if (navigator.permissions && navigator.permissions.query) {
@@ -204,10 +207,10 @@
       window.addEventListener('unhandledrejection', function (e) { dbg('REJECTION', String(e.reason)); show((e.reason && e.reason.message) || String(e.reason)); });
       window.addEventListener('load', function () {
         dbg('load event, app ready = ' + window.emojiFiedReady);
-        if (window.emojiFiedReady !== '6') show('an old or broken copy of the app loaded. Close this tab and open the link again.');
+        if (window.emojiFiedReady !== '7') show('an old or broken copy of the app loaded. Close this tab and open the link again.');
       });
     })();
   </script>
-  <script src="app.js?v=6"></script>
+  <script src="app.js?v=7"></script>
 </body>
 </html>

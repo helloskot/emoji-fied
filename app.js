@@ -63,6 +63,7 @@ const ui = {
   error: $('#error'),
   status: $('#status'),
   style: $('#style'),
+  random: $('#random'),
   custom: $('#custom'),
   customField: $('#customField'),
   cols: $('#cols'),
@@ -760,6 +761,49 @@ async function copyText() {
 }
 
 // ---------------------------------------------------------------------------
+// Randomize
+// ---------------------------------------------------------------------------
+
+const pick = (arr) => arr[Math.floor(Math.random() * arr.length)];
+const between = (lo, hi) => lo + Math.random() * (hi - lo);
+
+// Pick a random look. Ranges are kept to values that look good and stay
+// fast on phones (detail is capped well below the slider's maximum).
+function randomize() {
+  ui.random.classList.remove('spin');
+  void ui.random.offsetWidth; // restart the animation
+  ui.random.classList.add('spin');
+  const styles = [...ui.style.options].map((o) => o.value).filter((v) => v !== 'custom');
+  let style;
+  if (Math.random() < 0.2) {
+    // Occasionally invent a custom emoji set.
+    const pool = graphemes(EMOJI_SETS.everything).filter((g) => g.trim());
+    const n = 4 + Math.floor(Math.random() * 5);
+    ui.custom.value = Array.from({ length: n }, () => pick(pool)).join('');
+    style = 'custom';
+  } else {
+    do style = pick(styles);
+    while (style === ui.style.value && styles.length > 1);
+  }
+
+  ui.style.value = style;
+  ui.cols.value = Math.round(between(32, 110));
+  ui.contrast.value = between(0.9, 1.8).toFixed(2);
+  ui.bright.value = between(-0.08, 0.15).toFixed(2);
+  ui.invert.checked = Math.random() < 0.15;
+  ui.ink.value = pick([...ui.ink.options].map((o) => o.value));
+  applyStyle(); // also resets "Match by" to the set's default
+  if (state.kind === 'emoji' && style !== 'emoji:faces' && Math.random() < 0.3) ui.match.value = 'brightness';
+  syncLabels();
+  if (state.paused) render();
+
+  const name = style === 'custom' ? ui.custom.value : ui.style.selectedOptions[0].textContent;
+  const look = state.kind === 'emoji' ? '' : ` · ${ui.ink.selectedOptions[0].textContent}`;
+  toast(`🎲 ${name}${look}${ui.invert.checked ? ' · inverted' : ''}`);
+  dbg(`randomize: ${style}, ink=${ui.ink.value}, cols=${ui.cols.value}, contrast=${ui.contrast.value}, bright=${ui.bright.value}, invert=${ui.invert.checked}, match=${ui.match.value}`);
+}
+
+// ---------------------------------------------------------------------------
 // Wiring
 // ---------------------------------------------------------------------------
 
@@ -801,6 +845,7 @@ ui.pause.addEventListener('click', () => {
 });
 ui.snap.addEventListener('click', snapshot);
 ui.copy.addEventListener('click', copyText);
+ui.random.addEventListener('click', randomize);
 ui.record.addEventListener('click', () => (rec.recorder ? stopRecording() : startRecording()));
 ui.clipShare.addEventListener('click', shareClip);
 ui.clipDownload.addEventListener('click', downloadClip);
@@ -812,6 +857,7 @@ document.addEventListener('keydown', (e) => {
   if (e.key === ' ') { e.preventDefault(); ui.pause.click(); }
   if (e.key === 's') snapshot();
   if (e.key === 'r') ui.record.click();
+  if (e.key === 'd') randomize();
   if (e.key === 'Escape' && !ui.clip.hidden) closeClip();
 });
 
@@ -822,5 +868,5 @@ try {
 } catch (err) {
   ui.error.textContent = `Setup failed: ${err.message}`;
 }
-window.emojiFiedReady = '6';
-dbg('app.js v6 initialised');
+window.emojiFiedReady = '7';
+dbg('app.js v7 initialised');

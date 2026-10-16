@@ -115,7 +115,8 @@ main {
 
 .field { display: grid; gap: 6px; }
 .field[hidden] { display: none; }
-.field > span {
+.field > span,
+.field > label {
   display: flex;
   justify-content: space-between;
   color: var(--muted);
@@ -133,6 +134,18 @@ select, input[type="text"] {
   font: inherit;
 }
 input[type="text"] { font-size: 18px; }
+
+.style-row { display: flex; gap: 8px; }
+.style-row select { flex: 1; min-width: 0; }
+.random {
+  flex: none;
+  width: 46px;
+  padding: 0;
+  font-size: 22px;
+  line-height: 1;
+}
+.random.spin { animation: dice 0.35s ease-out; }
+@keyframes dice { from { transform: rotate(-200deg) scale(0.8); } to { transform: none; } }
 
 input[type="range"] { width: 100%; accent-color: var(--accent); }
 
