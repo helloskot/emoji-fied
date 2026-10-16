@@ -101,7 +101,15 @@ function graphemes(str) {
   return segmenter ? Array.from(segmenter.segment(str), (s) => s.segment) : Array.from(str);
 }
 
-const EMOJI_RE = /\p{Extended_Pictographic}|\p{Regional_Indicator}/u;
+// Built at runtime: an unsupported \p{...} in a regex literal is a parse-time
+// SyntaxError that would stop the whole script from loading.
+const EMOJI_RE = (() => {
+  try {
+    return new RegExp('\\p{Extended_Pictographic}|\\p{Regional_Indicator}', 'u');
+  } catch {
+    return /[\u2600-\u27BF]|[\uD83C-\uDBFF][\uDC00-\uDFFF]/;
+  }
+})();
 
 const clamp255 = (v) => (v < 0 ? 0 : v > 255 ? 255 : v);
 const luma = (r, g, b) => 0.2126 * r + 0.7152 * g + 0.0722 * b;
@@ -483,9 +491,9 @@ async function startCamera() {
       audio: false,
     });
     video.srcObject = state.stream;
-    await video.play();
     ui.overlay.hidden = true;
     layout();
+    await playVideo();
   } catch (err) {
     const msg = {
       NotAllowedError: 'Camera permission was denied. Allow it in your browser settings and try again.',
@@ -496,6 +504,28 @@ async function startCamera() {
     ui.overlay.hidden = false;
   } finally {
     ui.start.disabled = false;
+  }
+}
+
+// Resolve once the video is playing. If the browser refuses or stalls
+// (iOS needs a fresh tap in some cases), ask for one more tap.
+async function playVideo() {
+  const timeout = new Promise((_, reject) =>
+    setTimeout(() => reject(Object.assign(new Error('timeout'), { name: 'TimeoutError' })), 4000)
+  );
+  try {
+    await Promise.race([video.play(), timeout]);
+  } catch (err) {
+    if (!video.paused) return;
+    ui.error.textContent = '';
+    ui.start.textContent = 'Tap to show camera';
+    ui.overlay.hidden = false;
+    ui.start.onclick = () => {
+      video.play().catch(() => {});
+      ui.overlay.hidden = true;
+      ui.start.textContent = 'Start camera';
+      ui.start.onclick = null;
+    };
   }
 }
 
@@ -548,7 +578,9 @@ function syncLabels() {
   ui.brightOut.textContent = (b > 0 ? '+' : '') + b.toFixed(2);
 }
 
-ui.start.addEventListener('click', startCamera);
+ui.start.addEventListener('click', () => {
+  if (!ui.start.onclick) startCamera();
+});
 ui.style.addEventListener('change', applyStyle);
 ui.custom.addEventListener('input', () => {
   clearTimeout(ui.custom._t);
@@ -580,5 +612,10 @@ document.addEventListener('keydown', (e) => {
 });
 
 syncLabels();
-applyStyle();
 requestAnimationFrame(loop);
+try {
+  applyStyle();
+} catch (err) {
+  ui.error.textContent = `Setup failed: ${err.message}`;
+}
+window.emojiFiedReady = true;

@@ -116,6 +116,18 @@
 
   <div class="toast" id="toast" role="status"></div>
 
+  <script>
+    // Surface script errors on the page: phones have no visible console.
+    (function () {
+      var el = document.getElementById('error');
+      function show(msg) { if (el && !el.textContent) el.textContent = 'Error: ' + msg; }
+      window.addEventListener('error', function (e) { show(e.message || 'script failed to load'); });
+      window.addEventListener('unhandledrejection', function (e) { show((e.reason && e.reason.message) || String(e.reason)); });
+      window.addEventListener('load', function () {
+        if (!window.emojiFiedReady) show('the app did not start. Try reloading, or update iOS/Safari.');
+      });
+    })();
+  </script>
   <script src="app.js"></script>
 </body>
 </html>
