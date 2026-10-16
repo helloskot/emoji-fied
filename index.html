@@ -6,7 +6,7 @@
   <meta name="theme-color" content="#0b0b10" />
   <title>Emoji-fied</title>
   <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🤩</text></svg>" />
-  <link rel="stylesheet" href="style.css?v=3" />
+  <link rel="stylesheet" href="style.css?v=4" />
 </head>
 <body>
   <header>
@@ -26,7 +26,7 @@
           <button id="start" class="primary">Start camera</button>
           <p class="status" id="status" aria-live="polite"></p>
           <p class="error" id="error" role="alert"></p>
-          <p class="note">Everything runs in your browser. No video leaves your device. <span class="version">v3</span></p>
+          <p class="note">Everything runs in your browser. No video leaves your device. <span class="version">v4</span></p>
         </div>
       </div>
     </div>
@@ -122,13 +122,61 @@
     (function () {
       var el = document.getElementById('error');
       function show(msg) { if (el && !el.textContent) el.textContent = 'Error: ' + msg; }
-      window.addEventListener('error', function (e) { show(e.message || 'script failed to load'); });
-      window.addEventListener('unhandledrejection', function (e) { show((e.reason && e.reason.message) || String(e.reason)); });
+      // Diagnostic log, shown when the URL has ?debug
+      var DEBUG = /[?&]debug\b/.test(location.search);
+      var lines = [];
+      var t0 = Date.now();
+      var pre = null;
+      window.dbg = function () {
+        if (!DEBUG) return;
+        var msg = Array.prototype.map.call(arguments, function (a) {
+          return typeof a === 'string' ? a : JSON.stringify(a);
+        }).join(' ');
+        lines.push(((Date.now() - t0) / 1000).toFixed(2) + 's ' + msg);
+        if (pre) pre.textContent = lines.join('\n');
+      };
+      function describe(n) {
+        if (!n || !n.tagName) return String(n);
+        return n.tagName.toLowerCase() + (n.id ? '#' + n.id : '') + (n.className && typeof n.className === 'string' ? '.' + n.className.split(' ').join('.') : '');
+      }
+      if (DEBUG) {
+        var box = document.createElement('section');
+        box.className = 'debug';
+        box.innerHTML = '<div><strong>Diagnostics</strong> <button type="button">Copy log</button></div><pre></pre>';
+        document.body.appendChild(box);
+        pre = box.querySelector('pre');
+        box.querySelector('button').addEventListener('click', function () {
+          var text = lines.join('\n');
+          (navigator.clipboard ? navigator.clipboard.writeText(text) : Promise.reject()).then(
+            function () { box.querySelector('button').textContent = 'Copied!'; },
+            function () { var r = document.createRange(); r.selectNodeContents(pre); var s = getSelection(); s.removeAllRanges(); s.addRange(r); }
+          );
+        });
+        dbg('page v4', navigator.userAgent);
+        dbg('secure=' + window.isSecureContext, 'mediaDevices=' + !!navigator.mediaDevices,
+            'getUserMedia=' + !!(navigator.mediaDevices && navigator.mediaDevices.getUserMedia));
+        if (navigator.permissions && navigator.permissions.query) {
+          navigator.permissions.query({ name: 'camera' }).then(
+            function (p) { dbg('camera permission: ' + p.state); },
+            function (e) { dbg('camera permission query failed: ' + e.message); }
+          );
+        }
+        ['touchstart', 'touchend', 'click'].forEach(function (type) {
+          document.addEventListener(type, function (e) {
+            var pt = e.changedTouches ? e.changedTouches[0] : e;
+            var top = document.elementFromPoint(pt.clientX, pt.clientY);
+            dbg(type + ' on ' + describe(e.target) + ' (top element: ' + describe(top) + ')');
+          }, true);
+        });
+      }
+      window.addEventListener('error', function (e) { dbg('ERROR', e.message, e.filename + ':' + e.lineno); show(e.message || 'script failed to load'); });
+      window.addEventListener('unhandledrejection', function (e) { dbg('REJECTION', String(e.reason)); show((e.reason && e.reason.message) || String(e.reason)); });
       window.addEventListener('load', function () {
-        if (window.emojiFiedReady !== '3') show('an old or broken copy of the app loaded. Close this tab and open the link again.');
+        dbg('load event, app ready = ' + window.emojiFiedReady);
+        if (window.emojiFiedReady !== '4') show('an old or broken copy of the app loaded. Close this tab and open the link again.');
       });
     })();
   </script>
-  <script src="app.js?v=3"></script>
+  <script src="app.js?v=4"></script>
 </body>
 </html>

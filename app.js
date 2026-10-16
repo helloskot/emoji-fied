@@ -1,5 +1,7 @@
 'use strict';
 
+const dbg = window.dbg || (() => {});
+
 // ---------------------------------------------------------------------------
 // Character sets
 // ---------------------------------------------------------------------------
@@ -461,6 +463,10 @@ let fpsT = performance.now();
 function loop() {
   if (!state.paused && video.readyState >= 2) {
     render();
+    if (!frames && !loop.logged) {
+      loop.logged = true;
+      dbg(`first frame rendered: ${state.cols}x${state.rows}, kind=${state.kind}`);
+    }
     frames++;
   }
   const now = performance.now();
@@ -477,6 +483,7 @@ function loop() {
 // ---------------------------------------------------------------------------
 
 async function startCamera() {
+  dbg('startCamera()');
   ui.error.textContent = '';
   if (!navigator.mediaDevices?.getUserMedia) {
     ui.error.textContent = window.isSecureContext
@@ -492,10 +499,14 @@ async function startCamera() {
   }, 6000);
   try {
     state.stream?.getTracks().forEach((t) => t.stop());
+    dbg('calling getUserMedia, facing=' + state.facing);
     state.stream = await navigator.mediaDevices.getUserMedia({
       video: { facingMode: state.facing, width: { ideal: 1280 }, height: { ideal: 720 } },
       audio: false,
     });
+    const track = state.stream.getVideoTracks()[0];
+    const cam = (track && track.getSettings && track.getSettings()) || {};
+    dbg(`getUserMedia ok: ${cam.width}x${cam.height} @ ${cam.frameRate}fps, facing=${cam.facingMode}`);
     clearTimeout(slow);
     ui.status.textContent = 'Starting video…';
     video.srcObject = state.stream;
@@ -506,6 +517,7 @@ async function startCamera() {
     }
     layout();
   } catch (err) {
+    dbg('startCamera failed:', err.name, err.message);
     const msg = {
       NotAllowedError: 'Camera permission was denied. Allow it in your browser settings and try again.',
       NotFoundError: 'No camera was found on this device.',
@@ -528,7 +540,9 @@ async function playVideo() {
   );
   try {
     await Promise.race([video.play(), timeout]);
+    dbg('video.play() ok');
   } catch (err) {
+    dbg('video.play() failed:', err.name, err.message, 'paused=' + video.paused);
     if (!video.paused) return;
     ui.error.textContent = '';
     ui.status.textContent = 'Safari needs one more tap to show the video.';
@@ -593,7 +607,14 @@ function syncLabels() {
   ui.brightOut.textContent = (b > 0 ? '+' : '') + b.toFixed(2);
 }
 
+for (const ev of ['loadedmetadata', 'playing', 'pause', 'stalled', 'error']) {
+  video.addEventListener(ev, () =>
+    dbg(`video ${ev}: ${video.videoWidth}x${video.videoHeight} readyState=${video.readyState}`)
+  );
+}
+
 ui.start.addEventListener('click', () => {
+  dbg('start button click handler, onclick set=' + !!ui.start.onclick);
   if (!ui.start.onclick) startCamera();
 });
 ui.style.addEventListener('change', applyStyle);
@@ -633,4 +654,5 @@ try {
 } catch (err) {
   ui.error.textContent = `Setup failed: ${err.message}`;
 }
-window.emojiFiedReady = '3';
+window.emojiFiedReady = '4';
+dbg('app.js v4 initialised');
