@@ -13,7 +13,7 @@
   <link rel="apple-touch-icon" href="icons/icon-180.png" />
   <title>Emoji-fied</title>
   <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🤩</text></svg>" />
-  <link rel="stylesheet" href="style.css?v=17" />
+  <link rel="stylesheet" href="style.css?v=18" />
 </head>
 <body>
   <header>
@@ -51,12 +51,12 @@
           <p>Turn your camera, or any video, into emoji &amp; unicode art.</p>
           <button id="start" class="primary">Start camera</button>
           <div class="alt-sources">
-            <button id="startFile" type="button">🎞 Play a video file</button>
+            <button id="startFile" type="button">🎞 Play a video or GIF</button>
             <button id="startScreen" type="button">🖥 Share a tab or screen</button>
           </div>
           <p class="status" id="status" aria-live="polite"></p>
           <p class="error" id="error" role="alert"></p>
-          <p class="note">Everything runs in your browser. No video leaves your device. <span class="version">v17</span></p>
+          <p class="note">Everything runs in your browser. No video leaves your device. <span class="version">v18</span></p>
         </div>
       </div>
     </div>
@@ -66,10 +66,10 @@
         <span class="field-label">Source</span>
         <div class="seg" role="group" aria-label="Video source">
           <button type="button" data-source="camera" aria-pressed="true">📷 Camera</button>
-          <button type="button" data-source="file" aria-pressed="false">🎞 Video</button>
+          <button type="button" data-source="file" aria-pressed="false">🎞 Video/GIF</button>
           <button type="button" data-source="screen" aria-pressed="false">🖥 Screen</button>
         </div>
-        <input id="fileInput" type="file" accept="video/*" hidden />
+        <input id="fileInput" type="file" accept="video/*,image/*" hidden />
       </div>
 
       <div class="field">
@@ -302,7 +302,7 @@
             function () { var r = document.createRange(); r.selectNodeContents(pre); var s = getSelection(); s.removeAllRanges(); s.addRange(r); }
           );
         });
-        dbg('page v17', navigator.userAgent);
+        dbg('page v18', navigator.userAgent);
         dbg('secure=' + window.isSecureContext, 'mediaDevices=' + !!navigator.mediaDevices,
             'getUserMedia=' + !!(navigator.mediaDevices && navigator.mediaDevices.getUserMedia));
         if (navigator.permissions && navigator.permissions.query) {
@@ -323,10 +323,11 @@
       window.addEventListener('unhandledrejection', function (e) { dbg('REJECTION', String(e.reason)); show((e.reason && e.reason.message) || String(e.reason)); });
       window.addEventListener('load', function () {
         dbg('load event, app ready = ' + window.emojiFiedReady);
-        if (window.emojiFiedReady !== '17') show('an old or broken copy of the app loaded. Close this tab and open the link again.');
+        if (window.emojiFiedReady !== '18') show('an old or broken copy of the app loaded. Close this tab and open the link again.');
       });
     })();
   </script>
-  <script src="app.js?v=17"></script>
+  <script src="gif.js?v=18"></script>
+  <script src="app.js?v=18"></script>
 </body>
 </html>

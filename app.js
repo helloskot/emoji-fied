@@ -315,6 +315,7 @@ const state = {
   stream: null,
   source: 'camera', // 'camera' | 'file' | 'screen'
   fileUrl: null,
+  fileKind: null, // 'video' | 'gif' | 'image' when source is 'file'
   cameraCount: 0, // 0 = unknown
   switching: false,
   lastGlyphs: null, // Int16Array of palette indices for "copy text" (-1 = blank)
@@ -367,8 +368,7 @@ function layout() {
   state.cols = +ui.cols.value;
   ui.colsOut.textContent = `${state.cols} cols`;
 
-  const vw = video.videoWidth || 640;
-  const vh = video.videoHeight || 480;
+  const [vw, vh] = frameSize();
   const aspect =
     state.kind === 'emoji' ? 1 : state.kind === 'braille' ? BRAILLE_ASPECT : TEXT_ASPECT;
 
@@ -410,7 +410,10 @@ function grabFrame() {
     sctx.translate(sw, 0);
     sctx.scale(-1, 1);
   }
-  sctx.drawImage(video, 0, 0, sw, sh);
+  // Transparent GIF/PNG areas show as the background, not the last frame.
+  sctx.fillStyle = BG;
+  sctx.fillRect(0, 0, sw, sh);
+  sctx.drawImage(frameEl(), 0, 0, sw, sh);
   sctx.restore();
 
   // Apply the adjustments in place so the full-color tint pass below sees
@@ -587,7 +590,8 @@ function loop() {
   if (ui.flipFab.hidden === showFlip) ui.flipFab.hidden = !showFlip;
   updateSound();
   if (rec.recorder) copyFrameToRecording();
-  if (!state.paused && video.readyState >= 2) {
+  gifTick(performance.now());
+  if (!state.paused && frameReady()) {
     render();
     if (!frames && !loop.logged) {
       loop.logged = true;
@@ -907,6 +911,104 @@ function ensureAudioCtx() {
   return sound.ctx;
 }
 
+// ---- Frames: what the renderer draws from -------------------------------------
+// The <video> (camera, screen, video file), the GIF player's canvas, or a
+// still image.
+
+const gif = { data: null, canvas: document.createElement('canvas'), ctx: null, img: null, idx: -1, nextAt: 0, dispose: null };
+gif.ctx = gif.canvas.getContext('2d');
+const still = { img: null };
+
+function frameEl() {
+  if (state.source === 'file' && state.fileKind === 'gif') return gif.canvas;
+  if (state.source === 'file' && state.fileKind === 'image') return still.img;
+  return video;
+}
+
+function frameSize() {
+  const el = frameEl();
+  if (el === video) return [video.videoWidth || 640, video.videoHeight || 480];
+  if (el === gif.canvas) return [gif.canvas.width, gif.canvas.height];
+  return [el?.naturalWidth || 640, el?.naturalHeight || 480];
+}
+
+function frameReady() {
+  const el = frameEl();
+  return el === video ? video.readyState >= 2 : !!el;
+}
+
+// GIF playback: composite each frame onto an RGBA buffer, honouring
+// transparency and the previous frame's disposal method.
+function gifStart(data) {
+  gif.data = data;
+  gif.canvas.width = data.width;
+  gif.canvas.height = data.height;
+  gif.img = gif.ctx.createImageData(data.width, data.height);
+  gif.idx = -1;
+  gif.nextAt = 0;
+  gif.dispose = null;
+  gifTick(performance.now()); // draw the first frame now
+}
+
+function gifStop() {
+  gif.data = null;
+  gif.img = null;
+  gif.canvas.width = gif.canvas.height = 0;
+}
+
+function gifDrawFrame(i) {
+  const { width: W, height: H, frames } = gif.data;
+  const buf = gif.img.data;
+  if (i === 0) {
+    buf.fill(0); // each loop starts from a clean canvas
+    gif.dispose = null;
+  }
+  const d = gif.dispose;
+  if (d) {
+    // Disposal 2: clear the previous frame's area. 3: restore what was under it.
+    for (let y = d.y0; y < d.y1; y++) {
+      const row = (y * W) * 4;
+      if (d.type === 2) buf.fill(0, row + d.x0 * 4, row + d.x1 * 4);
+      else buf.set(d.saved.subarray((y - d.y0) * (d.x1 - d.x0) * 4, (y - d.y0 + 1) * (d.x1 - d.x0) * 4), row + d.x0 * 4);
+    }
+    gif.dispose = null;
+  }
+  const f = frames[i];
+  const x0 = Math.min(f.x, W), y0 = Math.min(f.y, H);
+  const x1 = Math.min(f.x + f.w, W), y1 = Math.min(f.y + f.h, H);
+  let saved = null;
+  if (f.disposal === 3) {
+    saved = new Uint8ClampedArray((x1 - x0) * (y1 - y0) * 4);
+    for (let y = y0; y < y1; y++) saved.set(buf.subarray((y * W + x0) * 4, (y * W + x1) * 4), (y - y0) * (x1 - x0) * 4);
+  }
+  const pal = f.palette;
+  for (let y = y0; y < y1; y++) {
+    let k = (y - f.y) * f.w + (x0 - f.x);
+    let o = (y * W + x0) * 4;
+    for (let x = x0; x < x1; x++, k++, o += 4) {
+      const c = f.idx[k];
+      if (c === f.transparent) continue;
+      buf[o] = pal[c * 3];
+      buf[o + 1] = pal[c * 3 + 1];
+      buf[o + 2] = pal[c * 3 + 2];
+      buf[o + 3] = 255;
+    }
+  }
+  if (f.disposal === 2 || f.disposal === 3) gif.dispose = { type: f.disposal, x0, y0, x1, y1, saved };
+  gif.ctx.putImageData(gif.img, 0, 0);
+}
+
+function gifTick(now) {
+  if (!gif.data || (state.paused && gif.idx >= 0)) return;
+  if (now < gif.nextAt) return;
+  const n = gif.data.frames.length;
+  gif.idx = (gif.idx + 1) % n;
+  gifDrawFrame(gif.idx);
+  const delay = gif.data.frames[gif.idx].delay;
+  // Keep to the GIF's own timing, but don't try to catch up after a stall.
+  gif.nextAt = now - gif.nextAt > 250 ? now + delay : gif.nextAt + delay;
+}
+
 // Stop whatever is showing (camera/screen tracks, or the file).
 function stopCurrentSource() {
   state.stream?.getTracks().forEach((t) => t.stop());
@@ -914,11 +1016,16 @@ function stopCurrentSource() {
   media.screenAudio?.disconnect();
   media.screenAudio = null;
   if (state.fileUrl) {
-    video.pause();
-    video.removeAttribute('src');
-    video.load();
+    if (state.fileKind === 'video') {
+      video.pause();
+      video.removeAttribute('src');
+      video.load();
+    }
+    gifStop();
+    still.img = null;
     URL.revokeObjectURL(state.fileUrl);
     state.fileUrl = null;
+    state.fileKind = null;
   }
 }
 
@@ -946,9 +1053,14 @@ function chooseFile() {
 
 async function playFile(file) {
   if (!file) return;
+  const isGif = file.type === 'image/gif' || /\.gif$/i.test(file.name);
+  if (isGif || file.type.startsWith('image/') || /\.(png|jpe?g|webp|heic|heif|avif|bmp)$/i.test(file.name)) {
+    return playImage(file, isGif);
+  }
   dbg(`video file: ${file.name}, ${(file.size / 1e6).toFixed(1)} MB, ${file.type}`);
   stopCurrentSource();
   state.source = 'file';
+  state.fileKind = 'video';
   state.fileUrl = URL.createObjectURL(file);
   video.srcObject = null;
   video.muted = false;
@@ -978,6 +1090,50 @@ async function playFile(file) {
   layout();
   connectSoundInput().catch((err) => dbg('sound input failed:', err.name, err.message));
   toast(`🎞 ${file.name}`);
+}
+
+// GIFs animate through the app's own decoder; other images (and any GIF it
+// can't read) are shown as a still picture.
+async function playImage(file, isGif) {
+  dbg(`image file: ${file.name}, ${(file.size / 1e6).toFixed(1)} MB, ${file.type}`);
+  let decoded = null;
+  if (isGif) {
+    try {
+      decoded = decodeGif(await file.arrayBuffer());
+      if (!decoded.frames.length) throw new Error('no frames');
+      if (decoded.width * decoded.height > 4e6) throw new Error(`too large (${decoded.width}x${decoded.height})`);
+      dbg(`GIF: ${decoded.width}x${decoded.height}, ${decoded.frames.length} frames`);
+    } catch (err) {
+      dbg('GIF decode failed, showing it as a still:', err.message);
+      decoded = null;
+    }
+  }
+  const url = URL.createObjectURL(file);
+  let img = null;
+  if (!decoded) {
+    img = new Image();
+    img.src = url;
+    try {
+      await img.decode();
+    } catch {
+      URL.revokeObjectURL(url);
+      toast('Couldn’t open that image');
+      return;
+    }
+  }
+  stopCurrentSource();
+  state.source = 'file';
+  state.fileKind = decoded ? 'gif' : 'image';
+  state.fileUrl = url;
+  if (decoded) gifStart(decoded);
+  else still.img = img;
+  ui.mirror.checked = false;
+  updateSourceUI();
+  ui.overlay.hidden = true;
+  ui.status.textContent = '';
+  layout();
+  connectSoundInput().catch((err) => dbg('sound input failed:', err.name, err.message));
+  toast(decoded ? `🎞 ${file.name} · ${decoded.frames.length} frames` : `🖼 ${file.name}`);
 }
 
 async function startScreen() {
@@ -1031,7 +1187,7 @@ async function startScreen() {
 // sound, or the microphone when "React to sound" is on.
 function recordingAudioTracks() {
   const live = (t) => t.readyState === 'live';
-  if (state.source === 'file' && media.elSource) {
+  if (state.source === 'file' && state.fileKind === 'video' && media.elSource) {
     if (!media.recDest) {
       media.recDest = sound.ctx.createMediaStreamDestination();
       media.elSource.connect(media.recDest);
@@ -1406,7 +1562,10 @@ async function connectSoundInput() {
     try { sound.input.disconnect(sound.analyser); } catch {}
     sound.input = null;
   }
-  let node = state.source === 'file' ? media.elSource : state.source === 'screen' ? media.screenAudio : null;
+  let node =
+    state.source === 'file' && state.fileKind === 'video' ? media.elSource
+    : state.source === 'screen' ? media.screenAudio
+    : null;
   if (node) {
     releaseMic();
     dbg(`sound: listening to the ${state.source}'s audio`);
@@ -1460,7 +1619,7 @@ async function onSoundModeChange() {
   if (sound.analyser) return;
   try {
     await connectSoundInput();
-    const what = state.source === 'file' ? 'the video' : state.source === 'screen' && media.screenAudio ? 'the shared tab' : null;
+    const what = state.source === 'file' && state.fileKind === 'video' ? 'the video' : state.source === 'screen' && media.screenAudio ? 'the shared tab' : null;
     if (what) toast(`🎵 Reacting to ${what}’s sound`);
     else toast(mode === 'pulse' ? '🎤 Pulsing to sound' : '🎤 Listening for beats');
   } catch (err) {
@@ -1813,7 +1972,7 @@ for (const ev of ['pointerdown', 'pointermove', 'touchstart']) {
 ui.pause.addEventListener('click', () => {
   state.paused = !state.paused;
   ui.pause.textContent = state.paused ? '▶ Resume' : '⏸ Pause';
-  if (state.source === 'file') state.paused ? video.pause() : video.play().catch(() => {});
+  if (state.source === 'file' && state.fileKind === 'video') state.paused ? video.pause() : video.play().catch(() => {});
 });
 for (const b of ui.sourceButtons) {
   b.addEventListener('click', () => {
@@ -1866,5 +2025,5 @@ try {
 } catch (err) {
   ui.error.textContent = `Setup failed: ${err.message}`;
 }
-window.emojiFiedReady = '17';
-dbg('app.js v17 initialised');
+window.emojiFiedReady = '18';
+dbg('app.js v18 initialised');

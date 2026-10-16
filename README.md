@@ -6,9 +6,11 @@ No build step, no dependencies, and no video ever leaves your device.
 ## Sources
 
 - **📷 Camera** (front or back).
-- **🎞 Video file**: any video from your Photos or Files, looped through the
-  filter. Its soundtrack plays, drives *React to sound* (no microphone needed)
-  and goes into recordings.
+- **🎞 Video / GIF**: any video, animated GIF or photo from your Photos or
+  Files, looped through the filter. GIFs are decoded by the app itself
+  (`gif.js`), so they animate in every browser, including Safari. A video's
+  soundtrack plays, drives *React to sound* (no microphone needed) and goes
+  into recordings.
 - **🖥 Screen / tab** (computers only; iPhone Safari can't share the screen):
   play something, a YouTube video for example, in another tab and share that
   tab to filter it live. Tick *Share tab audio* to react to its sound.
