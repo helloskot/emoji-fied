@@ -72,6 +72,8 @@ const ui = {
   sensOut: $('#sensOut'),
   fxStrength: $('#fxStrength'),
   fxOut: $('#fxOut'),
+  beatShape: $('#beatShape'),
+  beatOutline: $('#beatOutline'),
   custom: $('#custom'),
   customField: $('#customField'),
   cols: $('#cols'),
@@ -491,7 +493,10 @@ function renderEmoji(d) {
       else ctx.drawImage(pal.atlas, e.sx, e.sy, pal.cw, pal.ch, x * cellW, y * cellH, cellW, cellH);
     }
   }
-  if (fx) ctx.setTransform(1, 0, 0, 1, 0, 0);
+  if (fx) {
+    drawBeatOutlines(ctx, fx);
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
+  }
 }
 
 function renderText(d) {
@@ -548,6 +553,11 @@ function renderText(d) {
   }
   if (fx) lctx.setTransform(1, 0, 0, 1, 0, 0);
   ctx.drawImage(layer, 0, 0);
+  if (fx) {
+    zoomPunch(ctx, fx);
+    drawBeatOutlines(ctx, fx);
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -985,10 +995,162 @@ const sound = {
   lastShuffle: 0,
   kick: 0, // 1 on a beat, decays quickly: flash, shake, zoom punch
   hue: 0, // degrees of hue shift, kicked on beats, eases back to 0
-  ripples: [], // start times of beat ripples
+  ripples: [], // beat waves: { t0, shape, rot, spin, dir, hue, maxD }
+  lastShape: '',
 };
 
-const RIPPLE_MS = 700;
+const RIPPLE_MS = 850;
+
+// ---- Beat shapes -----------------------------------------------------------
+// Each beat sends a wave outward in a shape. A shape is a "distance" that
+// grows linearly from the centre (degree-1 homogeneous), so the wave front at
+// distance R is the shape's outline scaled to R. Curvy shapes use a polar
+// table: the outline's radius at each angle (y up), normalised to max 1.
+
+const POLAR_STEPS = 360;
+
+function polarTable(radiusAt) {
+  const t = new Float32Array(POLAR_STEPS);
+  for (let i = 0; i < POLAR_STEPS; i++) t[i] = radiusAt((i / POLAR_STEPS) * Math.PI * 2);
+  const max = Math.max(...t);
+  for (let i = 0; i < POLAR_STEPS; i++) t[i] = Math.max(t[i] / max, 0.05);
+  return t;
+}
+
+// Classic implicit heart (x² + y² − 1)³ − x²y³ ≤ 0, centred on its box.
+const HEART = polarTable((a) => {
+  const cx = 0, cy = 0.1;
+  const inside = (r) => {
+    const x = cx + r * Math.cos(a), y = cy + r * Math.sin(a);
+    const q = x * x + y * y - 1;
+    return q * q * q - x * x * y * y * y <= 0;
+  };
+  let lo = 0, hi = 0.02;
+  while (inside(hi) && hi < 3) { lo = hi; hi += 0.02; }
+  for (let i = 0; i < 20; i++) { const m = (lo + hi) / 2; if (inside(m)) lo = m; else hi = m; }
+  return lo;
+});
+
+// Five-pointed star: nearest hit of the ray on the star polygon.
+const STAR = polarTable((a) => {
+  const pts = Array.from({ length: 10 }, (_, k) => {
+    const ang = Math.PI / 2 + (k * Math.PI) / 5, r = k % 2 ? 0.42 : 1;
+    return [r * Math.cos(ang), r * Math.sin(ang)];
+  });
+  const dx = Math.cos(a), dy = Math.sin(a);
+  let best = Infinity;
+  for (let k = 0; k < 10; k++) {
+    const [x1, y1] = pts[k], [x2, y2] = pts[(k + 1) % 10];
+    const ex = x2 - x1, ey = y2 - y1, den = dx * ey - dy * ex;
+    if (Math.abs(den) < 1e-9) continue;
+    const t = (x1 * ey - y1 * ex) / den, u = (x1 * dy - y1 * dx) / den;
+    if (t > 0 && u >= 0 && u <= 1) best = Math.min(best, t);
+  }
+  return best;
+});
+
+const polarDist = (table) => (dx, dy, rot) => {
+  let a = Math.atan2(-dy, dx) - rot;
+  a = ((a % (Math.PI * 2)) + Math.PI * 2) % (Math.PI * 2);
+  return Math.hypot(dx, dy) / table[Math.floor((a / (Math.PI * 2)) * POLAR_STEPS) % POLAR_STEPS];
+};
+
+const SHAPES = {
+  circle: (dx, dy) => Math.hypot(dx, dy),
+  square: (dx, dy) => Math.max(Math.abs(dx), Math.abs(dy)),
+  diamond: (dx, dy) => (Math.abs(dx) + Math.abs(dy)) * 0.75,
+  hexagon: (dx, dy) => { const ax = Math.abs(dx), ay = Math.abs(dy); return Math.max(ax * 0.866 + ay * 0.5, ay); },
+  heart: polarDist(HEART),
+  star: polarDist(STAR),
+};
+const SHAPE_NAMES = [...Object.keys(SHAPES), 'sweep'];
+
+// Distance of canvas point (px, py) from the wave's origin, in that shape.
+function waveDist(rp, px, py, rot) {
+  if (rp.shape === 'sweep') {
+    return rp.dir === 0 ? py : rp.dir === 1 ? out.height - py : rp.dir === 2 ? px : out.width - px;
+  }
+  return SHAPES[rp.shape](px - out.width / 2, py - out.height / 2, rot);
+}
+
+function spawnWave(now) {
+  let shape = ui.beatShape.value;
+  if (shape === 'mix') {
+    do shape = pick(SHAPE_NAMES);
+    while (shape === sound.lastShape);
+  }
+  sound.lastShape = shape;
+  const rp = {
+    t0: now,
+    shape,
+    rot: Math.random() * Math.PI * 2,
+    spin: (Math.random() < 0.5 ? -1 : 1) * 1.2, // radians over the wave's life (stars)
+    dir: Math.floor(Math.random() * 4),
+    hue: Math.floor(Math.random() * 360),
+  };
+  if (shape !== 'star') rp.rot = rp.spin = 0; // only stars spin; hearts stay upright
+  // Size the wave so the whole shape is on screen for most of its life: it
+  // grows to 1.5x the size at which it first touches the border, fading out
+  // as it slips off the edges. (Sweeps cross the whole picture.)
+  const W = out.width, H = out.height;
+  if (shape === 'sweep') {
+    rp.maxD = rp.dir < 2 ? H : W;
+  } else {
+    let fit = Infinity;
+    for (let i = 0; i <= 48; i++) {
+      const f = i / 48;
+      for (const [px, py] of [[f * W, 0], [f * W, H], [0, f * H], [W, f * H]]) fit = Math.min(fit, waveDist(rp, px, py, rp.rot));
+    }
+    rp.maxD = fit * 1.5;
+  }
+  sound.ripples = sound.ripples.filter((w) => now - w.t0 < RIPPLE_MS).concat(rp).slice(-4);
+}
+
+// Glowing outline of each live wave, drawn on top of the glyphs.
+function drawBeatOutlines(c, fx) {
+  if (!ui.beatOutline.checked || !fx.ripples.length) return;
+  const cell = Math.max(state.cellW, state.cellH);
+  c.save();
+  c.lineJoin = 'round';
+  c.lineCap = 'round';
+  c.globalCompositeOperation = 'lighter'; // additive: a neon glow over the glyphs
+  for (const rp of fx.ripples) {
+    const alpha = Math.min(1, fx.strength) * (rp.age < 0.6 ? 1 : 1 - (rp.age - 0.6) / 0.4);
+    const path = new Path2D();
+    if (rp.shape === 'sweep') {
+      const R = rp.r;
+      if (rp.dir < 2) {
+        const y = rp.dir === 0 ? R : out.height - R;
+        path.moveTo(0, y); path.lineTo(out.width, y);
+      } else {
+        const x = rp.dir === 2 ? R : out.width - R;
+        path.moveTo(x, 0); path.lineTo(x, out.height);
+      }
+    } else {
+      const cx = out.width / 2, cy = out.height / 2;
+      for (let i = 0; i <= 120; i++) {
+        const a = (i / 120) * Math.PI * 2, ux = Math.cos(a), uy = -Math.sin(a);
+        const r = rp.r / SHAPES[rp.shape](ux, uy, rp.rotNow);
+        if (i) path.lineTo(cx + ux * r, cy + uy * r);
+        else path.moveTo(cx + ux * r, cy + uy * r);
+      }
+      path.closePath();
+    }
+    c.strokeStyle = `hsla(${rp.hue}, 100%, 60%, ${(alpha * 0.35).toFixed(3)})`;
+    c.lineWidth = cell * 2.2;
+    c.stroke(path);
+    c.strokeStyle = `hsla(${rp.hue}, 100%, 65%, ${(alpha * 0.9).toFixed(3)})`;
+    c.lineWidth = cell * 0.9;
+    c.stroke(path);
+    // Solid core on top, so the colour holds even over bright glyphs.
+    c.globalCompositeOperation = 'source-over';
+    c.strokeStyle = `hsla(${rp.hue}, 100%, 70%, ${alpha.toFixed(3)})`;
+    c.lineWidth = Math.max(3, cell * 0.35);
+    c.stroke(path);
+    c.globalCompositeOperation = 'lighter';
+  }
+  c.restore();
+}
 
 const soundPulses = () => ui.sound.value === 'pulse' || ui.sound.value === 'both';
 const soundShuffles = () => ui.sound.value === 'shuffle' || ui.sound.value === 'both';
@@ -998,17 +1160,25 @@ function soundFx() {
   const strength = +ui.fxStrength.value;
   if (strength <= 0) return null;
   const now = performance.now();
-  const maxD = Math.hypot(out.width, out.height) / 2;
   const ripples = [];
-  for (const t0 of sound.ripples) {
-    const age = (now - t0) / RIPPLE_MS;
-    if (age < 1) ripples.push({ r: age * maxD, w: maxD * 0.16, amp: strength * 1.5 * (1 - age) });
+  for (const rp of sound.ripples) {
+    const age = (now - rp.t0) / RIPPLE_MS;
+    if (age >= 1) continue;
+    ripples.push({
+      ...rp,
+      age,
+      r: age * rp.maxD,
+      w: rp.maxD * (rp.shape === 'sweep' ? 0.12 : 0.2),
+      amp: strength * 1.5 * (1 - age),
+      rotNow: rp.rot + rp.spin * age,
+    });
   }
   const fx = {
     swell: strength * sound.level * 1.5,
     kick: strength * sound.kick,
     hue: strength * sound.hue,
     ripples,
+    strength,
     cx: out.width / 2,
     cy: out.height / 2,
   };
@@ -1027,9 +1197,9 @@ function zoomPunch(c, fx) {
 function drawCellFx(c, pal, e, x, y, cellW, cellH, fx, bright) {
   let k = 1 + fx.swell * (0.3 + 0.7 * bright);
   if (fx.ripples.length) {
-    const d = Math.hypot((x + 0.5) * cellW - fx.cx, (y + 0.5) * cellH - fx.cy);
+    const px = (x + 0.5) * cellW, py = (y + 0.5) * cellH;
     for (const rp of fx.ripples) {
-      const t = 1 - Math.abs(d - rp.r) / rp.w;
+      const t = 1 - Math.abs(waveDist(rp, px, py, rp.rotNow) - rp.r) / rp.w;
       if (t > 0) k += rp.amp * t;
     }
   }
@@ -1135,7 +1305,7 @@ function updateSound() {
     sound.lastBeat = now;
     sound.kick = 1;
     sound.hue += (Math.random() < 0.5 ? -1 : 1) * (50 + Math.random() * 60);
-    sound.ripples = sound.ripples.filter((t) => now - t < RIPPLE_MS).concat(now).slice(-4);
+    if (soundPulses()) spawnWave(now);
     ui.meter.classList.remove('beat');
     void ui.meter.offsetWidth;
     ui.meter.classList.add('beat');
@@ -1360,5 +1530,5 @@ try {
 } catch (err) {
   ui.error.textContent = `Setup failed: ${err.message}`;
 }
-window.emojiFiedReady = '14';
-dbg('app.js v14 initialised');
+window.emojiFiedReady = '15';
+dbg('app.js v15 initialised');
