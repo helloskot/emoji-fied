@@ -60,6 +60,10 @@ const ui = {
   stage: $('#stage'),
   overlay: $('#overlay'),
   start: $('#start'),
+  startFile: $('#startFile'),
+  startScreen: $('#startScreen'),
+  sourceButtons: [...document.querySelectorAll('[data-source]')],
+  fileInput: $('#fileInput'),
   error: $('#error'),
   status: $('#status'),
   style: $('#style'),
@@ -102,6 +106,14 @@ const ui = {
   full: $('#full'),
   exitFull: $('#exitFull'),
   airplay: $('#airplay'),
+  player: $('#player'),
+  liveVideo: $('#liveVideo'),
+  playerAirplay: $('#playerAirplay'),
+  playerPip: $('#playerPip'),
+  playerFull: $('#playerFull'),
+  playerMirror: $('#playerMirror'),
+  playerClose: $('#playerClose'),
+  clipAirplay: $('#clipAirplay'),
   tvHint: $('#tvHint'),
   tvSteps: $('#tvSteps'),
   tvHintClose: $('#tvHintClose'),
@@ -301,6 +313,8 @@ const state = {
   paused: false,
   facing: 'user',
   stream: null,
+  source: 'camera', // 'camera' | 'file' | 'screen'
+  fileUrl: null,
   cameraCount: 0, // 0 = unknown
   switching: false,
   lastGlyphs: null, // Int16Array of palette indices for "copy text" (-1 = blank)
@@ -370,7 +384,7 @@ function layout() {
   layer.width = needLayer ? out.width : 1;
   layer.height = needLayer ? out.height : 1;
   dbg(`layout: video ${vw}x${vh} -> canvas ${out.width}x${out.height}, grid ${state.cols}x${state.rows}`);
-  if (state.stream) ui.stage.style.aspectRatio = `${out.width} / ${out.height}`;
+  if (hasSource()) ui.stage.style.aspectRatio = `${out.width} / ${out.height}`;
 
   const sub = state.kind === 'braille' ? [2, 4] : [1, 1];
   sample.width = state.cols * sub[0];
@@ -569,7 +583,7 @@ let fpsT = performance.now();
 
 function loop() {
   // Show the on-camera record button only while the live view is up.
-  const showFlip = !!state.stream && ui.overlay.hidden && state.cameraCount !== 1;
+  const showFlip = state.source === 'camera' && !!state.stream && ui.overlay.hidden && state.cameraCount !== 1;
   if (ui.flipFab.hidden === showFlip) ui.flipFab.hidden = !showFlip;
   updateSound();
   if (rec.recorder) copyFrameToRecording();
@@ -583,8 +597,8 @@ function loop() {
   }
   const now = performance.now();
   if (now - fpsT >= 1000) {
-    ui.fps.textContent = state.stream ? `${state.cols}×${state.rows} · ${frames} fps` : '';
-    if (state.stream && (loop.ticks = (loop.ticks || 0) + 1) <= 10) dbg(`running: ${frames} fps`);
+    ui.fps.textContent = hasSource() ? `${state.cols}×${state.rows} · ${frames} fps` : '';
+    if (hasSource() && (loop.ticks = (loop.ticks || 0) + 1) <= 10) dbg(`running: ${frames} fps`);
     frames = 0;
     fpsT = now;
   }
@@ -619,12 +633,12 @@ function copyFrameToRecording() {
 }
 
 function startRecording() {
-  if (!state.stream) {
-    toast('Start the camera first');
+  if (!hasSource()) {
+    toast('Start the camera or a video first');
     return;
   }
   // While "React to sound" is on, the microphone goes into the clip too.
-  const audioTracks = sound.stream ? sound.stream.getAudioTracks().filter((t) => t.readyState === 'live') : [];
+  const audioTracks = recordingAudioTracks();
   const type = pickRecordingType(audioTracks.length > 0);
   if (type === null) {
     toast('Recording isn’t supported in this browser');
@@ -707,6 +721,7 @@ function finishRecording(recorder, canvasStream, type, withAudio) {
   ui.clipVideo.play().catch(() => {});
   ui.clipInfo.textContent = `${ext.toUpperCase()} · ${(blob.size / 1e6).toFixed(1)} MB${withAudio ? ' · with sound' : ''}`;
   ui.clipShare.hidden = !navigator.canShare?.({ files: [rec.file] });
+  ui.clipAirplay.hidden = !canAirplay(ui.clipVideo);
   hostOverlays();
   ui.clip.hidden = false;
 }
@@ -792,6 +807,8 @@ async function startCamera({ exact = false, quietFail = false } = {}) {
     dbg(`getUserMedia ok: ${cam.width}x${cam.height} @ ${cam.frameRate}fps, facing=${cam.facingMode}`);
     clearTimeout(slow);
     ui.status.textContent = 'Starting video…';
+    video.muted = true;
+    video.loop = false;
     video.srcObject = state.stream;
     await playVideo();
     if (!video.paused) {
@@ -836,6 +853,10 @@ const deviceIdOf = (stream) => stream?.getVideoTracks()[0]?.getSettings?.().devi
 // on screen while the new camera starts, and recordings carry on.
 async function switchCamera() {
   if (state.switching) return;
+  if (state.source !== 'camera') {
+    toast('Switch the source to 📷 Camera first');
+    return;
+  }
   const prev = state.facing;
   state.facing = prev === 'user' ? 'environment' : 'user';
   ui.mirror.checked = state.facing === 'user';
@@ -868,6 +889,159 @@ async function switchCamera() {
   ui.flip.disabled = false;
 }
 
+// ---------------------------------------------------------------------------
+// Sources: camera, a video file, or a shared screen/tab
+// ---------------------------------------------------------------------------
+
+// Audio nodes for sources with their own sound.
+const media = { elSource: null, recDest: null, screenAudio: null };
+
+const hasSource = () => (state.source === 'file' ? !!state.fileUrl : !!state.stream);
+const canShareScreen = () => !!navigator.mediaDevices?.getDisplayMedia;
+
+function ensureAudioCtx() {
+  const AC = window.AudioContext || window.webkitAudioContext;
+  if (!AC) throw new Error('Web Audio is not supported');
+  sound.ctx = sound.ctx || new AC();
+  sound.ctx.resume?.().catch(() => {});
+  return sound.ctx;
+}
+
+// Stop whatever is showing (camera/screen tracks, or the file).
+function stopCurrentSource() {
+  state.stream?.getTracks().forEach((t) => t.stop());
+  state.stream = null;
+  media.screenAudio?.disconnect();
+  media.screenAudio = null;
+  if (state.fileUrl) {
+    video.pause();
+    video.removeAttribute('src');
+    video.load();
+    URL.revokeObjectURL(state.fileUrl);
+    state.fileUrl = null;
+  }
+}
+
+function updateSourceUI() {
+  for (const b of ui.sourceButtons) b.setAttribute('aria-pressed', String(b.dataset.source === state.source));
+  ui.flip.disabled = state.source !== 'camera';
+}
+
+async function useCamera() {
+  const live = state.stream?.getVideoTracks()[0]?.readyState === 'live';
+  if (state.source === 'camera' && live && ui.overlay.hidden) return;
+  stopCurrentSource();
+  state.source = 'camera';
+  ui.mirror.checked = state.facing === 'user';
+  updateSourceUI();
+  const ok = await startCamera();
+  if (ok) connectSoundInput().catch((err) => dbg('sound input failed:', err.name, err.message));
+}
+
+function chooseFile() {
+  // Start audio inside the tap: iOS only allows it from a gesture.
+  try { ensureAudioCtx(); } catch {}
+  ui.fileInput.click();
+}
+
+async function playFile(file) {
+  if (!file) return;
+  dbg(`video file: ${file.name}, ${(file.size / 1e6).toFixed(1)} MB, ${file.type}`);
+  stopCurrentSource();
+  state.source = 'file';
+  state.fileUrl = URL.createObjectURL(file);
+  video.srcObject = null;
+  video.muted = false;
+  video.loop = true;
+  video.src = state.fileUrl;
+  // Route the soundtrack through Web Audio so it can drive "React to sound"
+  // and go into recordings. (An element can only be connected once.)
+  try {
+    const ctx = ensureAudioCtx();
+    if (!media.elSource) {
+      media.elSource = ctx.createMediaElementSource(video);
+      media.elSource.connect(ctx.destination);
+    }
+    // Let the soundtrack play even with the ringer switch on silent.
+    if (navigator.audioSession && !sound.stream) navigator.audioSession.type = 'playback';
+  } catch (err) {
+    dbg('file audio routing failed:', err.name, err.message);
+  }
+  ui.mirror.checked = false;
+  updateSourceUI();
+  ui.status.textContent = 'Loading video…';
+  await playVideo();
+  if (!video.paused) {
+    ui.overlay.hidden = true;
+    ui.status.textContent = '';
+  }
+  layout();
+  connectSoundInput().catch((err) => dbg('sound input failed:', err.name, err.message));
+  toast(`🎞 ${file.name}`);
+}
+
+async function startScreen() {
+  if (!canShareScreen()) {
+    toast('Screen sharing isn’t available on this device');
+    return;
+  }
+  try { ensureAudioCtx(); } catch {}
+  let stream;
+  try {
+    // Must be called straight from the tap. Chrome offers "Share tab audio".
+    stream = await navigator.mediaDevices.getDisplayMedia({ video: { frameRate: { ideal: 30 } }, audio: true });
+  } catch (err) {
+    dbg('getDisplayMedia failed:', err.name, err.message);
+    if (err.name !== 'NotAllowedError' && err.name !== 'AbortError') toast('Couldn’t share the screen');
+    return;
+  }
+  stopCurrentSource();
+  state.source = 'screen';
+  state.stream = stream;
+  const vt = stream.getVideoTracks()[0];
+  vt?.addEventListener('ended', () => {
+    if (state.stream !== stream) return;
+    dbg('screen sharing ended');
+    stopCurrentSource();
+    state.source = 'camera';
+    updateSourceUI();
+    ui.status.textContent = 'Screen sharing stopped.';
+    ui.overlay.hidden = false;
+  });
+  const at = stream.getAudioTracks()[0];
+  if (at && sound.ctx) media.screenAudio = sound.ctx.createMediaStreamSource(new MediaStream([at]));
+  // The shared tab is already playing its own sound, so don't play it twice.
+  video.muted = true;
+  video.loop = false;
+  video.srcObject = stream;
+  ui.mirror.checked = false;
+  updateSourceUI();
+  await playVideo();
+  if (!video.paused) {
+    ui.overlay.hidden = true;
+    ui.status.textContent = '';
+  }
+  layout();
+  connectSoundInput().catch((err) => dbg('sound input failed:', err.name, err.message));
+  toast(at ? '🖥 Sharing with sound' : '🖥 Sharing (no sound: tick “Share tab audio” to include it)');
+  dbg(`screen sharing: ${vt?.label}, audio=${!!at}`);
+}
+
+// Audio a recording should carry: the file's soundtrack, the shared tab's
+// sound, or the microphone when "React to sound" is on.
+function recordingAudioTracks() {
+  const live = (t) => t.readyState === 'live';
+  if (state.source === 'file' && media.elSource) {
+    if (!media.recDest) {
+      media.recDest = sound.ctx.createMediaStreamDestination();
+      media.elSource.connect(media.recDest);
+    }
+    return media.recDest.stream.getAudioTracks().filter(live);
+  }
+  if (state.source === 'screen' && state.stream) return state.stream.getAudioTracks().filter(live);
+  return sound.stream ? sound.stream.getAudioTracks().filter(live) : [];
+}
+
 // Resolve once the video is playing. If the browser refuses or stalls
 // (iOS needs a fresh tap in some cases), ask for one more tap.
 async function playVideo() {
@@ -881,8 +1055,8 @@ async function playVideo() {
     dbg('video.play() failed:', err.name, err.message, 'paused=' + video.paused);
     if (!video.paused) return;
     ui.error.textContent = '';
-    ui.status.textContent = 'Safari needs one more tap to show the video.';
-    ui.start.textContent = 'Tap to show camera';
+    ui.status.textContent = 'Safari needs one more tap to start the video.';
+    ui.start.textContent = 'Tap to start';
     ui.overlay.hidden = false;
     ui.start.onclick = () => {
       video.play().catch(() => {});
@@ -1212,33 +1386,60 @@ function drawCellFx(c, pal, e, x, y, cellW, cellH, fx, bright) {
   c.drawImage(pal.atlas, e.sx, e.sy, pal.cw, pal.ch, dx, dy, w, h);
 }
 
-async function startMic() {
+// The analyser listens to the source's own sound when it has one (a video
+// file's soundtrack, a shared tab's audio), otherwise to the microphone.
+// Called when sound is turned on and whenever the source changes.
+async function connectSoundInput() {
+  if (ui.sound.value === 'off') return;
   // Create/resume the audio context synchronously inside the user's tap;
   // iOS only lets audio start from a gesture.
-  const AC = window.AudioContext || window.webkitAudioContext;
-  if (!AC) throw new Error('Web Audio is not supported');
-  sound.ctx = sound.ctx || new AC();
-  sound.ctx.resume?.().catch(() => {});
-  dbg('requesting microphone');
-  // Raw signal: echo cancellation, noise suppression and auto gain would
-  // flatten music and claps.
-  sound.stream = await navigator.mediaDevices.getUserMedia({
-    audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false },
-  });
-  const src = sound.ctx.createMediaStreamSource(sound.stream);
-  sound.analyser = sound.ctx.createAnalyser();
-  sound.analyser.fftSize = 1024;
-  sound.analyser.smoothingTimeConstant = 0;
-  src.connect(sound.analyser); // not connected to the speakers: no feedback
-  sound.buf = new Float32Array(sound.analyser.fftSize);
-  sound.peak = 0.01;
-  sound.avg = 0;
-  dbg(`microphone on, audio context ${sound.ctx.state}, ${sound.ctx.sampleRate} Hz`);
+  const ctx = ensureAudioCtx();
+  if (!sound.analyser) {
+    sound.analyser = ctx.createAnalyser();
+    sound.analyser.fftSize = 1024;
+    sound.analyser.smoothingTimeConstant = 0;
+    sound.buf = new Float32Array(sound.analyser.fftSize);
+    sound.peak = 0.01;
+    sound.avg = 0;
+  }
+  if (sound.input) {
+    try { sound.input.disconnect(sound.analyser); } catch {}
+    sound.input = null;
+  }
+  let node = state.source === 'file' ? media.elSource : state.source === 'screen' ? media.screenAudio : null;
+  if (node) {
+    releaseMic();
+    dbg(`sound: listening to the ${state.source}'s audio`);
+  } else {
+    if (!sound.stream) {
+      dbg('requesting microphone');
+      if (navigator.audioSession) navigator.audioSession.type = 'auto';
+      // Raw signal: echo cancellation, noise suppression and auto gain would
+      // flatten music and claps.
+      sound.stream = await navigator.mediaDevices.getUserMedia({
+        audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false },
+      });
+      sound.micNode = ctx.createMediaStreamSource(sound.stream);
+      dbg(`microphone on, audio context ${ctx.state}, ${ctx.sampleRate} Hz`);
+    }
+    node = sound.micNode;
+  }
+  node.connect(sound.analyser); // not connected to the speakers: no feedback
+  sound.input = node;
+}
+
+function releaseMic() {
+  sound.stream?.getTracks().forEach((t) => t.stop());
+  sound.stream = null;
+  sound.micNode = null;
 }
 
 function stopMic() {
-  sound.stream?.getTracks().forEach((t) => t.stop());
-  sound.stream = null;
+  if (sound.input && sound.analyser) {
+    try { sound.input.disconnect(sound.analyser); } catch {}
+  }
+  sound.input = null;
+  releaseMic();
   sound.analyser = null;
   sound.level = 0;
   sound.kick = 0;
@@ -1258,8 +1459,10 @@ async function onSoundModeChange() {
   }
   if (sound.analyser) return;
   try {
-    await startMic();
-    toast(mode === 'pulse' ? '🎤 Pulsing to sound' : '🎤 Listening for beats');
+    await connectSoundInput();
+    const what = state.source === 'file' ? 'the video' : state.source === 'screen' && media.screenAudio ? 'the shared tab' : null;
+    if (what) toast(`🎵 Reacting to ${what}’s sound`);
+    else toast(mode === 'pulse' ? '🎤 Pulsing to sound' : '🎤 Listening for beats');
   } catch (err) {
     dbg('microphone failed:', err.name, err.message);
     ui.sound.value = 'off';
@@ -1309,7 +1512,7 @@ function updateSound() {
     ui.meter.classList.remove('beat');
     void ui.meter.offsetWidth;
     ui.meter.classList.add('beat');
-    if (soundShuffles() && state.stream && !state.paused && now - sound.lastShuffle > 600) {
+    if (soundShuffles() && hasSource() && !state.paused && now - sound.lastShuffle > 600) {
       sound.lastShuffle = now;
       randomize({ quiet: true, keepDetail: true });
     }
@@ -1339,7 +1542,7 @@ const isFull = () => !!fullscreenElement() || document.body.classList.contains('
 // toast and the clip preview move inside it while it's active.
 function hostOverlays() {
   const host = fullscreenElement() || document.body;
-  for (const el of [ui.clip, ui.toast]) if (el.parentNode !== host) host.appendChild(el);
+  for (const el of [ui.clip, ui.player, ui.toast]) if (el.parentNode !== host) host.appendChild(el);
 }
 
 async function enterFullscreen() {
@@ -1427,6 +1630,95 @@ function tvSteps() {
   ];
 }
 
+// ---- Live player: the art in a native <video> -------------------------------
+// The output canvas is streamed into a native video element, which gets the
+// system's AirPlay picker, Picture in Picture and true full screen (on iPhone
+// too, via webkitEnterFullscreen). Whether AirPlay accepts a live,
+// canvas-generated stream is up to the OS, so the outcome is logged.
+
+const live = { stream: null };
+
+const hasAirplayPicker = (v) => typeof v.webkitShowPlaybackTargetPicker === 'function';
+const canAirplay = (v) => hasAirplayPicker(v) || typeof v.remote?.prompt === 'function';
+const canPip = (v) =>
+  (document.pictureInPictureEnabled && typeof v.requestPictureInPicture === 'function') ||
+  !!v.webkitSupportsPresentationMode?.('picture-in-picture');
+const inPip = (v) => document.pictureInPictureElement === v || v.webkitPresentationMode === 'picture-in-picture';
+
+async function showAirplay(v) {
+  if (hasAirplayPicker(v)) {
+    v.webkitShowPlaybackTargetPicker();
+    dbg(`AirPlay picker shown (${v.id})`);
+    return;
+  }
+  try {
+    await v.remote.prompt();
+  } catch (err) {
+    dbg(`remote playback prompt failed (${v.id}):`, err.name, err.message);
+    if (err.name === 'NotSupportedError') toast('This browser can’t cast this picture. Try Screen Mirroring');
+  }
+}
+
+function openPlayer() {
+  if (!hasSource()) {
+    toast('Start the camera or a video first');
+    return;
+  }
+  const v = ui.liveVideo;
+  if (!live.stream) {
+    live.stream = out.captureStream(30);
+    v.srcObject = live.stream;
+  }
+  v.play().catch((err) => dbg('live player play failed:', err.name, err.message));
+  ui.playerAirplay.hidden = !canAirplay(v);
+  ui.playerPip.hidden = !canPip(v);
+  ui.playerFull.hidden = !(v.webkitEnterFullscreen || v.requestFullscreen);
+  hostOverlays();
+  ui.player.hidden = false;
+  dbg(`live player opened: airplay picker=${hasAirplayPicker(v)}, remote=${typeof v.remote?.prompt === 'function'}, pip=${canPip(v)}`);
+}
+
+function stopLive() {
+  live.stream?.getTracks().forEach((t) => t.stop());
+  live.stream = null;
+  ui.liveVideo.srcObject = null;
+}
+
+// Keep streaming while it's in Picture in Picture or on a TV.
+function closePlayer() {
+  ui.player.hidden = true;
+  const v = ui.liveVideo;
+  if (!inPip(v) && !v.webkitCurrentPlaybackTargetIsWireless) stopLive();
+}
+
+async function togglePip() {
+  const v = ui.liveVideo;
+  try {
+    if (inPip(v)) {
+      if (document.pictureInPictureElement) await document.exitPictureInPicture();
+      else v.webkitSetPresentationMode('inline');
+    } else if (document.pictureInPictureEnabled && v.requestPictureInPicture) {
+      await v.requestPictureInPicture();
+    } else {
+      v.webkitSetPresentationMode('picture-in-picture');
+    }
+  } catch (err) {
+    dbg('picture in picture failed:', err.name, err.message);
+    toast('Picture in Picture isn’t available here');
+  }
+}
+
+function playerFullscreen() {
+  const v = ui.liveVideo;
+  try {
+    // iPhone only allows full screen for video, through its own player.
+    if (document.fullscreenEnabled && v.requestFullscreen) v.requestFullscreen();
+    else v.webkitEnterFullscreen();
+  } catch (err) {
+    dbg('player full screen failed:', err.name, err.message);
+  }
+}
+
 async function showOnTv() {
   await enterFullscreen();
   ui.tvSteps.innerHTML = tvSteps().map((step) => `<li>${step}</li>`).join('');
@@ -1468,7 +1760,7 @@ for (const ev of ['loadedmetadata', 'playing', 'pause', 'stalled', 'error']) {
 
 ui.start.addEventListener('click', () => {
   dbg('start button click handler, onclick set=' + !!ui.start.onclick);
-  if (!ui.start.onclick) startCamera();
+  if (!ui.start.onclick) useCamera();
 });
 ui.style.addEventListener('change', applyStyle);
 ui.custom.addEventListener('input', () => {
@@ -1487,7 +1779,30 @@ ui.flip.addEventListener('click', switchCamera);
 ui.flipFab.addEventListener('click', switchCamera);
 ui.full.addEventListener('click', enterFullscreen);
 ui.exitFull.addEventListener('click', exitFullscreen);
-ui.airplay.addEventListener('click', showOnTv);
+ui.airplay.addEventListener('click', openPlayer);
+ui.playerAirplay.addEventListener('click', () => showAirplay(ui.liveVideo));
+ui.playerPip.addEventListener('click', togglePip);
+ui.playerFull.addEventListener('click', playerFullscreen);
+ui.playerClose.addEventListener('click', closePlayer);
+ui.playerMirror.addEventListener('click', () => {
+  closePlayer();
+  showOnTv();
+});
+ui.clipAirplay.addEventListener('click', () => showAirplay(ui.clipVideo));
+for (const v of [ui.liveVideo, ui.clipVideo]) {
+  v.addEventListener('webkitplaybacktargetavailabilitychanged', (e) => dbg(`AirPlay targets (${v.id}): ${e.availability}`));
+  v.addEventListener('webkitcurrentplaybacktargetiswirelesschanged', () => {
+    const on = v.webkitCurrentPlaybackTargetIsWireless;
+    dbg(`AirPlay (${v.id}): ${on ? 'playing on a TV' : 'back on this device'}`);
+    toast(on ? '📺 Playing on your TV' : '📺 AirPlay ended');
+    if (!on && v === ui.liveVideo && ui.player.hidden && !inPip(v)) stopLive();
+  });
+}
+ui.liveVideo.addEventListener('leavepictureinpicture', () => ui.player.hidden && stopLive());
+ui.liveVideo.addEventListener('webkitpresentationmodechanged', () => {
+  dbg(`live player presentation: ${ui.liveVideo.webkitPresentationMode}`);
+  if (ui.player.hidden && !inPip(ui.liveVideo) && !ui.liveVideo.webkitCurrentPlaybackTargetIsWireless) stopLive();
+});
 ui.tvHintClose.addEventListener('click', () => (ui.tvHint.hidden = true));
 document.addEventListener('fullscreenchange', onFullscreenChange);
 document.addEventListener('webkitfullscreenchange', onFullscreenChange);
@@ -1498,7 +1813,27 @@ for (const ev of ['pointerdown', 'pointermove', 'touchstart']) {
 ui.pause.addEventListener('click', () => {
   state.paused = !state.paused;
   ui.pause.textContent = state.paused ? '▶ Resume' : '⏸ Pause';
+  if (state.source === 'file') state.paused ? video.pause() : video.play().catch(() => {});
 });
+for (const b of ui.sourceButtons) {
+  b.addEventListener('click', () => {
+    const src = b.dataset.source;
+    if (src === 'camera') useCamera();
+    else if (src === 'file') chooseFile();
+    else startScreen();
+  });
+}
+ui.startFile.addEventListener('click', chooseFile);
+ui.startScreen.addEventListener('click', startScreen);
+ui.fileInput.addEventListener('change', () => {
+  const file = ui.fileInput.files[0];
+  ui.fileInput.value = ''; // so picking the same file again still fires
+  playFile(file);
+});
+if (!canShareScreen()) {
+  ui.startScreen.hidden = true;
+  ui.sourceButtons.find((b) => b.dataset.source === 'screen').hidden = true;
+}
 ui.snap.addEventListener('click', snapshot);
 ui.copy.addEventListener('click', copyText);
 ui.random.addEventListener('click', () => randomize());
@@ -1519,7 +1854,8 @@ document.addEventListener('keydown', (e) => {
   if (e.key === 'r') ui.record.click();
   if (e.key === 'd') randomize();
   if (e.key === 'f') switchCamera();
-  if (e.key === 'Escape' && !ui.clip.hidden) closeClip();
+  if (e.key === 'Escape' && !ui.player.hidden) closePlayer();
+  else if (e.key === 'Escape' && !ui.clip.hidden) closeClip();
   else if (e.key === 'Escape' && document.body.classList.contains('immersive')) exitFullscreen();
 });
 
@@ -1530,5 +1866,5 @@ try {
 } catch (err) {
   ui.error.textContent = `Setup failed: ${err.message}`;
 }
-window.emojiFiedReady = '15';
-dbg('app.js v15 initialised');
+window.emojiFiedReady = '17';
+dbg('app.js v17 initialised');

@@ -270,6 +270,41 @@ input[type="text"] { font-size: 18px; }
 .meter.beat { animation: beat 0.25s ease-out; }
 @keyframes beat { from { box-shadow: 0 0 0 3px rgba(255, 210, 63, 0.6); } to { box-shadow: 0 0 0 0 rgba(255, 210, 63, 0); } }
 
+.field-label { color: var(--muted); font-size: 13px; }
+.seg {
+  display: grid;
+  grid-auto-flow: column;
+  grid-auto-columns: 1fr;
+  gap: 4px;
+  padding: 4px;
+  background: var(--panel-2);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+}
+.seg button {
+  border: 0;
+  background: transparent;
+  padding: 8px 6px;
+  font-size: 14px;
+  white-space: nowrap;
+}
+.seg button[hidden] { display: none; }
+.seg button[aria-pressed="true"] {
+  background: var(--accent);
+  color: var(--accent-ink);
+  font-weight: 600;
+}
+
+.alt-sources {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 8px;
+  margin-top: 12px;
+}
+.alt-sources button { font-size: 14px; padding: 8px 12px; }
+.alt-sources button[hidden] { display: none; }
+
 .style-row { display: flex; gap: 8px; }
 .style-row select { flex: 1; min-width: 0; }
 .random {
@@ -355,9 +390,9 @@ button:disabled { opacity: 0.5; cursor: default; }
   border-radius: 10px;
 }
 .clip-info { margin: 0; color: var(--muted); font-size: 13px; text-align: center; }
-.clip-actions { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 8px; }
+.clip-actions { display: grid; grid-template-columns: repeat(auto-fit, minmax(96px, 1fr)); gap: 8px; }
 .clip-actions button[hidden] { display: none; }
-.clip-actions:has(button[hidden]) { grid-template-columns: 1fr 1fr; }
+#player .reset { justify-self: center; }
 
 .toast {
   position: fixed;

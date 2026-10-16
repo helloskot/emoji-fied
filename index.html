@@ -13,7 +13,7 @@
   <link rel="apple-touch-icon" href="icons/icon-180.png" />
   <title>Emoji-fied</title>
   <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🤩</text></svg>" />
-  <link rel="stylesheet" href="style.css?v=15" />
+  <link rel="stylesheet" href="style.css?v=17" />
 </head>
 <body>
   <header>
@@ -48,16 +48,30 @@
       <div class="overlay" id="overlay">
         <div class="overlay-card">
           <div class="big">😀🔥🌈</div>
-          <p>Turn your camera into emoji &amp; unicode art.</p>
+          <p>Turn your camera, or any video, into emoji &amp; unicode art.</p>
           <button id="start" class="primary">Start camera</button>
+          <div class="alt-sources">
+            <button id="startFile" type="button">🎞 Play a video file</button>
+            <button id="startScreen" type="button">🖥 Share a tab or screen</button>
+          </div>
           <p class="status" id="status" aria-live="polite"></p>
           <p class="error" id="error" role="alert"></p>
-          <p class="note">Everything runs in your browser. No video leaves your device. <span class="version">v15</span></p>
+          <p class="note">Everything runs in your browser. No video leaves your device. <span class="version">v17</span></p>
         </div>
       </div>
     </div>
 
     <section class="controls" aria-label="Filter controls">
+      <div class="field">
+        <span class="field-label">Source</span>
+        <div class="seg" role="group" aria-label="Video source">
+          <button type="button" data-source="camera" aria-pressed="true">📷 Camera</button>
+          <button type="button" data-source="file" aria-pressed="false">🎞 Video</button>
+          <button type="button" data-source="screen" aria-pressed="false">🖥 Screen</button>
+        </div>
+        <input id="fileInput" type="file" accept="video/*" hidden />
+      </div>
+
       <div class="field">
         <label for="style">Style</label>
         <div class="style-row">
@@ -201,20 +215,35 @@
         <button id="snap" title="Download a PNG">📸 Snapshot</button>
         <button id="copy" title="Copy the frame as text">📋 Copy text</button>
         <button id="full" title="Full screen">⛶ Full screen</button>
-        <button id="airplay" title="Show it on a TV with AirPlay">📺 AirPlay</button>
+        <button id="airplay" title="Open the live picture in the native player, for AirPlay, Picture in Picture and full screen">📺 AirPlay</button>
       </div>
     </section>
   </main>
 
   <div class="clip" id="clip" hidden>
     <div class="clip-card" role="dialog" aria-label="Recorded clip">
-      <video id="clipVideo" playsinline loop muted autoplay controls></video>
+      <video id="clipVideo" playsinline loop muted autoplay controls x-webkit-airplay="allow"></video>
       <p class="clip-info" id="clipInfo"></p>
       <div class="clip-actions">
         <button id="clipShare" class="primary">Save / Share</button>
+        <button id="clipAirplay">📺 AirPlay</button>
         <button id="clipDownload">Download</button>
         <button id="clipDiscard">Discard</button>
       </div>
+    </div>
+  </div>
+
+  <div class="clip" id="player" hidden>
+    <div class="clip-card" role="dialog" aria-label="Live player">
+      <video id="liveVideo" playsinline autoplay muted controls x-webkit-airplay="allow"></video>
+      <p class="clip-info">Live picture in the native player (no sound). Use its controls or the buttons below.</p>
+      <div class="clip-actions">
+        <button id="playerAirplay" class="primary">📺 AirPlay</button>
+        <button id="playerPip">⧉ Picture in Picture</button>
+        <button id="playerFull">⛶ Full screen</button>
+      </div>
+      <button id="playerMirror" type="button" class="reset">TV not showing it? Use Screen Mirroring instead</button>
+      <button id="playerClose" type="button">Close</button>
     </div>
   </div>
 
@@ -273,7 +302,7 @@
             function () { var r = document.createRange(); r.selectNodeContents(pre); var s = getSelection(); s.removeAllRanges(); s.addRange(r); }
           );
         });
-        dbg('page v15', navigator.userAgent);
+        dbg('page v17', navigator.userAgent);
         dbg('secure=' + window.isSecureContext, 'mediaDevices=' + !!navigator.mediaDevices,
             'getUserMedia=' + !!(navigator.mediaDevices && navigator.mediaDevices.getUserMedia));
         if (navigator.permissions && navigator.permissions.query) {
@@ -294,10 +323,10 @@
       window.addEventListener('unhandledrejection', function (e) { dbg('REJECTION', String(e.reason)); show((e.reason && e.reason.message) || String(e.reason)); });
       window.addEventListener('load', function () {
         dbg('load event, app ready = ' + window.emojiFiedReady);
-        if (window.emojiFiedReady !== '15') show('an old or broken copy of the app loaded. Close this tab and open the link again.');
+        if (window.emojiFiedReady !== '17') show('an old or broken copy of the app loaded. Close this tab and open the link again.');
       });
     })();
   </script>
-  <script src="app.js?v=15"></script>
+  <script src="app.js?v=17"></script>
 </body>
 </html>

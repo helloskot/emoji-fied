@@ -3,6 +3,20 @@
 Turn your camera into live emoji or unicode art, right in the browser.
 No build step, no dependencies, and no video ever leaves your device.
 
+## Sources
+
+- **📷 Camera** (front or back).
+- **🎞 Video file**: any video from your Photos or Files, looped through the
+  filter. Its soundtrack plays, drives *React to sound* (no microphone needed)
+  and goes into recordings.
+- **🖥 Screen / tab** (computers only; iPhone Safari can't share the screen):
+  play something, a YouTube video for example, in another tab and share that
+  tab to filter it live. Tick *Share tab audio* to react to its sound.
+
+YouTube links can't be fed in directly: the player is cross-origin, so browsers
+don't let other pages read its frames, and YouTube's terms don't allow ripping
+the stream. Sharing the tab gets the same result.
+
 ## Styles
 
 - **Emoji**: Everything, Rainbow, Faces, Food, Nature, Animals, Hearts.
@@ -27,10 +41,12 @@ recorded clips include the audio.
 Front/back camera: the switch button over the camera view (or `F`); mirroring
 follows the camera and recordings carry on through a switch.
 
-Full screen (⛶) and 📺 AirPlay: full screen fills the screen, using native full
-screen where the browser allows it (iPhone Safari doesn't, so it fills the page),
-and keeps the screen awake. Web pages can't AirPlay a live camera effect, so the
-AirPlay button goes full screen and shows how to Screen Mirror to an Apple TV.
+Full screen (⛶) fills the screen, using native full screen where the browser
+allows it (iPhone Safari doesn't, so it fills the page), and keeps the screen
+awake. 📺 AirPlay opens the live picture in a native video player with the
+system AirPlay picker, Picture in Picture and true full screen (on iPhone too).
+Whether AirPlay accepts a live, generated stream is up to the OS; if not, the
+player links to Screen Mirroring steps. Recorded clips have an AirPlay button too.
 For true full screen on iPhone, use Share → **Add to Home Screen**.
 
 Extras: 🎲 randomize (`D`: random style, ink, detail and tone, sometimes a
