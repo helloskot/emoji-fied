@@ -17,8 +17,9 @@ No build step, no dependencies, and no video ever leaves your device.
   much ink each glyph uses, so order doesn't matter).
 
 Extras: detail slider, contrast/brightness, invert, mirror, front/back camera
-flip, pause (`Space`), PNG snapshot (`S`), and **Copy text** to paste the frame
-as plain emoji/unicode text.
+flip, pause (`Space`), PNG snapshot (`S`), **video clips** (`R`, up to 60 s;
+MP4 on Safari, with Save/Share to Photos on iPhone) and **Copy text** to paste
+the frame as plain emoji/unicode text.
 
 ## Run it
 

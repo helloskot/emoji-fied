@@ -172,6 +172,45 @@ button.primary {
 }
 button:disabled { opacity: 0.5; cursor: default; }
 
+.buttons .record { grid-column: 1 / -1; font-weight: 600; }
+.buttons .record.recording {
+  background: #d92d3a;
+  border-color: #d92d3a;
+  color: #fff;
+  font-variant-numeric: tabular-nums;
+}
+
+.clip {
+  position: fixed;
+  inset: 0;
+  z-index: 10;
+  display: grid;
+  place-items: center;
+  padding: 16px;
+  background: rgba(0, 0, 0, 0.75);
+}
+.clip[hidden] { display: none; }
+.clip-card {
+  width: min(100%, 520px);
+  max-height: 100%;
+  display: grid;
+  gap: 10px;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: 14px;
+}
+.clip-card video {
+  width: 100%;
+  max-height: 60vh;
+  background: #000;
+  border-radius: 10px;
+}
+.clip-info { margin: 0; color: var(--muted); font-size: 13px; text-align: center; }
+.clip-actions { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 8px; }
+.clip-actions button[hidden] { display: none; }
+.clip-actions:has(button[hidden]) { grid-template-columns: 1fr 1fr; }
+
 .toast {
   position: fixed;
   left: 50%;

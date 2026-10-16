@@ -83,6 +83,13 @@ const ui = {
   pause: $('#pause'),
   snap: $('#snap'),
   copy: $('#copy'),
+  record: $('#record'),
+  clip: $('#clip'),
+  clipVideo: $('#clipVideo'),
+  clipInfo: $('#clipInfo'),
+  clipShare: $('#clipShare'),
+  clipDownload: $('#clipDownload'),
+  clipDiscard: $('#clipDiscard'),
   fps: $('#fps'),
   toast: $('#toast'),
 };
@@ -478,6 +485,7 @@ let frames = 0;
 let fpsT = performance.now();
 
 function loop() {
+  if (rec.recorder) copyFrameToRecording();
   if (!state.paused && video.readyState >= 2) {
     render();
     if (!frames && !loop.logged) {
@@ -494,6 +502,142 @@ function loop() {
     fpsT = now;
   }
   requestAnimationFrame(loop);
+}
+
+// ---------------------------------------------------------------------------
+// Recording
+// ---------------------------------------------------------------------------
+
+const MAX_CLIP_SECONDS = 60;
+const rec = { recorder: null, chunks: [], canvas: null, ctx: null, started: 0, timer: 0, file: null, url: null };
+
+function pickRecordingType() {
+  if (!window.MediaRecorder || !HTMLCanvasElement.prototype.captureStream) return null;
+  const types = ['video/mp4;codecs=avc1', 'video/mp4', 'video/webm;codecs=vp9', 'video/webm;codecs=vp8', 'video/webm'];
+  return types.find((t) => MediaRecorder.isTypeSupported?.(t)) ?? '';
+}
+
+// Record from a fixed-size copy of the output so that changing style or
+// detail mid-clip (which resizes the output canvas) doesn't break the
+// encoder. H.264 also needs even dimensions.
+function copyFrameToRecording() {
+  const { canvas, ctx: rctx } = rec;
+  const scale = Math.min(canvas.width / out.width, canvas.height / out.height);
+  const w = out.width * scale, h = out.height * scale;
+  rctx.fillStyle = BG;
+  rctx.fillRect(0, 0, canvas.width, canvas.height);
+  rctx.drawImage(out, (canvas.width - w) / 2, (canvas.height - h) / 2, w, h);
+}
+
+function startRecording() {
+  if (!state.stream) {
+    toast('Start the camera first');
+    return;
+  }
+  const type = pickRecordingType();
+  if (type === null) {
+    toast('Recording isn’t supported in this browser');
+    return;
+  }
+  const even = (n) => Math.max(2, Math.round(n / 2) * 2);
+  const scale = Math.min(1, 1280 / Math.max(out.width, out.height));
+  rec.canvas = document.createElement('canvas');
+  rec.canvas.width = even(out.width * scale);
+  rec.canvas.height = even(out.height * scale);
+  rec.ctx = rec.canvas.getContext('2d');
+  copyFrameToRecording();
+
+  const stream = rec.canvas.captureStream(30);
+  let recorder;
+  try {
+    const opts = { videoBitsPerSecond: 6_000_000 };
+    if (type) opts.mimeType = type;
+    recorder = new MediaRecorder(stream, opts);
+  } catch (err) {
+    dbg('MediaRecorder failed:', err.name, err.message);
+    toast('Couldn’t start recording');
+    return;
+  }
+  rec.chunks = [];
+  recorder.ondataavailable = (e) => e.data && e.data.size && rec.chunks.push(e.data);
+  recorder.onstop = () => finishRecording(recorder, stream, type);
+  recorder.onerror = (e) => {
+    dbg('recorder error:', e.error?.name, e.error?.message);
+    toast('Recording failed');
+  };
+  recorder.start(1000);
+  rec.recorder = recorder;
+  rec.started = performance.now();
+  rec.timer = setInterval(updateRecordButton, 250);
+  ui.record.classList.add('recording');
+  updateRecordButton();
+  dbg(`recording started: ${rec.canvas.width}x${rec.canvas.height}, type=${recorder.mimeType || type || 'default'}`);
+}
+
+function stopRecording() {
+  if (!rec.recorder) return;
+  clearInterval(rec.timer);
+  if (rec.recorder.state !== 'inactive') rec.recorder.stop();
+  rec.recorder = null;
+  ui.record.classList.remove('recording');
+  ui.record.textContent = '⏺ Record';
+}
+
+function updateRecordButton() {
+  const secs = Math.floor((performance.now() - rec.started) / 1000);
+  ui.record.textContent = `⏹ Stop ${Math.floor(secs / 60)}:${String(secs % 60).padStart(2, '0')}`;
+  if (secs >= MAX_CLIP_SECONDS) {
+    stopRecording();
+    toast(`Clips are limited to ${MAX_CLIP_SECONDS} seconds`);
+  }
+}
+
+function finishRecording(recorder, stream, type) {
+  stream.getTracks().forEach((t) => t.stop());
+  const mime = (recorder.mimeType || type || 'video/webm').split(';')[0];
+  const blob = new Blob(rec.chunks, { type: mime });
+  rec.chunks = [];
+  dbg(`recording stopped: ${(blob.size / 1e6).toFixed(2)} MB, ${mime}`);
+  if (!blob.size) {
+    toast('Nothing was recorded');
+    return;
+  }
+  const ext = mime.includes('mp4') ? 'mp4' : 'webm';
+  rec.file = new File([blob], `emoji-fied-${Date.now()}.${ext}`, { type: mime });
+  rec.url = URL.createObjectURL(blob);
+  ui.clipVideo.src = rec.url;
+  ui.clipVideo.play().catch(() => {});
+  ui.clipInfo.textContent = `${ext.toUpperCase()} · ${(blob.size / 1e6).toFixed(1)} MB`;
+  ui.clipShare.hidden = !navigator.canShare?.({ files: [rec.file] });
+  ui.clip.hidden = false;
+}
+
+function closeClip() {
+  ui.clip.hidden = true;
+  ui.clipVideo.removeAttribute('src');
+  ui.clipVideo.load();
+  if (rec.url) URL.revokeObjectURL(rec.url);
+  rec.url = null;
+  rec.file = null;
+}
+
+async function shareClip() {
+  try {
+    await navigator.share({ files: [rec.file], title: 'emoji·fied clip' });
+  } catch (err) {
+    if (err.name !== 'AbortError') {
+      dbg('share failed:', err.name, err.message);
+      toast('Sharing failed, try Download');
+    }
+  }
+}
+
+function downloadClip() {
+  const a = document.createElement('a');
+  a.href = rec.url;
+  a.download = rec.file.name;
+  a.click();
+  toast('Clip downloaded');
 }
 
 // ---------------------------------------------------------------------------
@@ -657,12 +801,18 @@ ui.pause.addEventListener('click', () => {
 });
 ui.snap.addEventListener('click', snapshot);
 ui.copy.addEventListener('click', copyText);
+ui.record.addEventListener('click', () => (rec.recorder ? stopRecording() : startRecording()));
+ui.clipShare.addEventListener('click', shareClip);
+ui.clipDownload.addEventListener('click', downloadClip);
+ui.clipDiscard.addEventListener('click', closeClip);
 video.addEventListener('loadedmetadata', layout);
 
 document.addEventListener('keydown', (e) => {
   if (e.target.matches('input[type="text"], select')) return;
   if (e.key === ' ') { e.preventDefault(); ui.pause.click(); }
   if (e.key === 's') snapshot();
+  if (e.key === 'r') ui.record.click();
+  if (e.key === 'Escape' && !ui.clip.hidden) closeClip();
 });
 
 syncLabels();
@@ -672,5 +822,5 @@ try {
 } catch (err) {
   ui.error.textContent = `Setup failed: ${err.message}`;
 }
-window.emojiFiedReady = '5';
-dbg('app.js v5 initialised');
+window.emojiFiedReady = '6';
+dbg('app.js v6 initialised');
