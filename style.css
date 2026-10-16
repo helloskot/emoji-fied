@@ -271,6 +271,24 @@ input[type="text"] { font-size: 18px; }
 @keyframes beat { from { box-shadow: 0 0 0 3px rgba(255, 210, 63, 0.6); } to { box-shadow: 0 0 0 0 rgba(255, 210, 63, 0); } }
 
 .field-label { color: var(--muted); font-size: 13px; }
+
+.photo-panel {
+  display: grid;
+  gap: 10px;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--panel-2);
+}
+.photo-panel[hidden] { display: none; }
+.poster-box { display: grid; gap: 8px; padding-top: 10px; border-top: 1px solid var(--line); }
+#posterImg {
+  width: 100%;
+  max-height: 60vh;
+  object-fit: contain;
+  background: #000;
+  border-radius: 10px;
+}
 .seg {
   display: grid;
   grid-auto-flow: column;
