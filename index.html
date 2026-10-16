@@ -6,7 +6,7 @@
   <meta name="theme-color" content="#0b0b10" />
   <title>Emoji-fied</title>
   <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🤩</text></svg>" />
-  <link rel="stylesheet" href="style.css?v=8" />
+  <link rel="stylesheet" href="style.css?v=9" />
 </head>
 <body>
   <header>
@@ -19,6 +19,11 @@
       <canvas id="out" aria-label="Camera rendered as emoji or unicode characters"></canvas>
       <video id="video" playsinline muted autoplay></video>
 
+      <button id="recordFab" class="rec-fab" type="button" aria-label="Start recording" hidden>
+        <span class="rec-icon" aria-hidden="true"></span>
+        <span class="rec-time" id="recordFabTime"></span>
+      </button>
+
       <div class="overlay" id="overlay">
         <div class="overlay-card">
           <div class="big">😀🔥🌈</div>
@@ -26,7 +31,7 @@
           <button id="start" class="primary">Start camera</button>
           <p class="status" id="status" aria-live="polite"></p>
           <p class="error" id="error" role="alert"></p>
-          <p class="note">Everything runs in your browser. No video leaves your device. <span class="version">v8</span></p>
+          <p class="note">Everything runs in your browser. No video leaves your device. <span class="version">v9</span></p>
         </div>
       </div>
     </div>
@@ -208,7 +213,7 @@
             function () { var r = document.createRange(); r.selectNodeContents(pre); var s = getSelection(); s.removeAllRanges(); s.addRange(r); }
           );
         });
-        dbg('page v8', navigator.userAgent);
+        dbg('page v9', navigator.userAgent);
         dbg('secure=' + window.isSecureContext, 'mediaDevices=' + !!navigator.mediaDevices,
             'getUserMedia=' + !!(navigator.mediaDevices && navigator.mediaDevices.getUserMedia));
         if (navigator.permissions && navigator.permissions.query) {
@@ -229,10 +234,10 @@
       window.addEventListener('unhandledrejection', function (e) { dbg('REJECTION', String(e.reason)); show((e.reason && e.reason.message) || String(e.reason)); });
       window.addEventListener('load', function () {
         dbg('load event, app ready = ' + window.emojiFiedReady);
-        if (window.emojiFiedReady !== '8') show('an old or broken copy of the app loaded. Close this tab and open the link again.');
+        if (window.emojiFiedReady !== '9') show('an old or broken copy of the app loaded. Close this tab and open the link again.');
       });
     })();
   </script>
-  <script src="app.js?v=8"></script>
+  <script src="app.js?v=9"></script>
 </body>
 </html>
