@@ -187,3 +187,21 @@ button:disabled { opacity: 0.5; cursor: default; }
   pointer-events: none;
 }
 .toast.show { opacity: 1; transform: translate(-50%, 0); }
+
+.debug {
+  max-width: 1200px;
+  margin: 0 auto 32px;
+  padding: 0 16px;
+}
+.debug div { display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px; }
+.debug pre {
+  background: #000;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 10px;
+  font: 12px/1.45 ui-monospace, Menlo, monospace;
+  white-space: pre-wrap;
+  word-break: break-word;
+  color: #9fe8a8;
+  min-height: 6em;
+}
