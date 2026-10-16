@@ -6,7 +6,7 @@
   <meta name="theme-color" content="#0b0b10" />
   <title>Emoji-fied</title>
   <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🤩</text></svg>" />
-  <link rel="stylesheet" href="style.css" />
+  <link rel="stylesheet" href="style.css?v=3" />
 </head>
 <body>
   <header>
@@ -24,8 +24,9 @@
           <div class="big">😀🔥🌈</div>
           <p>Turn your camera into emoji &amp; unicode art.</p>
           <button id="start" class="primary">Start camera</button>
+          <p class="status" id="status" aria-live="polite"></p>
           <p class="error" id="error" role="alert"></p>
-          <p class="note">Everything runs in your browser. No video leaves your device.</p>
+          <p class="note">Everything runs in your browser. No video leaves your device. <span class="version">v3</span></p>
         </div>
       </div>
     </div>
@@ -124,10 +125,10 @@
       window.addEventListener('error', function (e) { show(e.message || 'script failed to load'); });
       window.addEventListener('unhandledrejection', function (e) { show((e.reason && e.reason.message) || String(e.reason)); });
       window.addEventListener('load', function () {
-        if (!window.emojiFiedReady) show('the app did not start. Try reloading, or update iOS/Safari.');
+        if (window.emojiFiedReady !== '3') show('an old or broken copy of the app loaded. Close this tab and open the link again.');
       });
     })();
   </script>
-  <script src="app.js"></script>
+  <script src="app.js?v=3"></script>
 </body>
 </html>
