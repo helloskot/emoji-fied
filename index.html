@@ -6,7 +6,7 @@
   <meta name="theme-color" content="#0b0b10" />
   <title>Emoji-fied</title>
   <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🤩</text></svg>" />
-  <link rel="stylesheet" href="style.css?v=10" />
+  <link rel="stylesheet" href="style.css?v=12" />
 </head>
 <body>
   <header>
@@ -24,6 +24,16 @@
         <span class="rec-time" id="recordFabTime"></span>
       </button>
 
+      <button id="flipFab" class="flip-fab" type="button" aria-label="Switch camera" title="Switch camera (F)" hidden>
+        <svg viewBox="0 0 24 24" width="26" height="26" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <path d="M20 7h-3l-2-3H9L7 7H4a1 1 0 0 0-1 1v11a1 1 0 0 0 1 1h16a1 1 0 0 0 1-1V8a1 1 0 0 0-1-1z" />
+          <path d="M15.6 11.2A3.6 3.6 0 0 0 9 11.5" />
+          <path d="M8.4 14.8a3.6 3.6 0 0 0 6.6-.3" />
+          <path d="M9 9.2v2.4h2.4" />
+          <path d="M15 16.8v-2.4h-2.4" />
+        </svg>
+      </button>
+
       <div class="overlay" id="overlay">
         <div class="overlay-card">
           <div class="big">😀🔥🌈</div>
@@ -31,7 +41,7 @@
           <button id="start" class="primary">Start camera</button>
           <p class="status" id="status" aria-live="polite"></p>
           <p class="error" id="error" role="alert"></p>
-          <p class="note">Everything runs in your browser. No video leaves your device. <span class="version">v10</span></p>
+          <p class="note">Everything runs in your browser. No video leaves your device. <span class="version">v12</span></p>
         </div>
       </div>
     </div>
@@ -87,6 +97,16 @@
           <option value="both">Pulse + shuffle</option>
         </select>
         <div class="meter" id="meter" hidden aria-hidden="true"><div class="meter-fill" id="meterFill"></div></div>
+        <div class="sound-opts" id="soundOpts" hidden>
+          <label class="field">
+            <span>Sensitivity <output id="sensOut"></output></span>
+            <input id="sens" type="range" min="0.5" max="4" step="0.1" value="2" />
+          </label>
+          <label class="field">
+            <span>Effect strength <output id="fxOut"></output></span>
+            <input id="fxStrength" type="range" min="0" max="2" step="0.05" value="1" />
+          </label>
+        </div>
       </div>
 
       <label class="field" id="matchField">
@@ -224,7 +244,7 @@
             function () { var r = document.createRange(); r.selectNodeContents(pre); var s = getSelection(); s.removeAllRanges(); s.addRange(r); }
           );
         });
-        dbg('page v10', navigator.userAgent);
+        dbg('page v12', navigator.userAgent);
         dbg('secure=' + window.isSecureContext, 'mediaDevices=' + !!navigator.mediaDevices,
             'getUserMedia=' + !!(navigator.mediaDevices && navigator.mediaDevices.getUserMedia));
         if (navigator.permissions && navigator.permissions.query) {
@@ -245,10 +265,10 @@
       window.addEventListener('unhandledrejection', function (e) { dbg('REJECTION', String(e.reason)); show((e.reason && e.reason.message) || String(e.reason)); });
       window.addEventListener('load', function () {
         dbg('load event, app ready = ' + window.emojiFiedReady);
-        if (window.emojiFiedReady !== '10') show('an old or broken copy of the app loaded. Close this tab and open the link again.');
+        if (window.emojiFiedReady !== '12') show('an old or broken copy of the app loaded. Close this tab and open the link again.');
       });
     })();
   </script>
-  <script src="app.js?v=10"></script>
+  <script src="app.js?v=12"></script>
 </body>
 </html>

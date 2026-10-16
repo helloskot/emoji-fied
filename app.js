@@ -67,6 +67,11 @@ const ui = {
   sound: $('#sound'),
   meter: $('#meter'),
   meterFill: $('#meterFill'),
+  soundOpts: $('#soundOpts'),
+  sens: $('#sens'),
+  sensOut: $('#sensOut'),
+  fxStrength: $('#fxStrength'),
+  fxOut: $('#fxOut'),
   custom: $('#custom'),
   customField: $('#customField'),
   cols: $('#cols'),
@@ -91,6 +96,7 @@ const ui = {
   blank: $('#blank'),
   blankField: $('#blankField'),
   flip: $('#flip'),
+  flipFab: $('#flipFab'),
   pause: $('#pause'),
   snap: $('#snap'),
   copy: $('#copy'),
@@ -288,6 +294,8 @@ const state = {
   paused: false,
   facing: 'user',
   stream: null,
+  cameraCount: 0, // 0 = unknown
+  switching: false,
   lastGlyphs: null, // Int16Array of palette indices for "copy text" (-1 = blank)
 };
 
@@ -390,8 +398,15 @@ function grabFrame() {
   const img = sctx.getImageData(0, 0, sw, sh);
   const d = img.data;
   const c = +ui.contrast.value;
-  const br = (+ui.bright.value + pulseAmount() * 0.12) * 255;
-  const sat = +ui.sat.value;
+  const fx = state.fx;
+  const br = (+ui.bright.value + (fx ? fx.swell * 0.06 + fx.kick * 0.22 : 0)) * 255;
+  const sat = +ui.sat.value * (fx ? 1 + fx.kick * 0.8 : 1);
+  // Beat hue shift: a luminance-preserving hue rotation matrix.
+  const hue = fx && Math.abs(fx.hue) > 0.5 ? (fx.hue * Math.PI) / 180 : 0;
+  const hc = Math.cos(hue), hs = Math.sin(hue);
+  const m00 = 0.213 + hc * 0.787 - hs * 0.213, m01 = 0.715 - hc * 0.715 - hs * 0.715, m02 = 0.072 - hc * 0.072 + hs * 0.928;
+  const m10 = 0.213 - hc * 0.213 + hs * 0.143, m11 = 0.715 + hc * 0.285 + hs * 0.14, m12 = 0.072 - hc * 0.072 - hs * 0.283;
+  const m20 = 0.213 - hc * 0.213 - hs * 0.787, m21 = 0.715 - hc * 0.715 + hs * 0.715, m22 = 0.072 + hc * 0.928 + hs * 0.072;
   const shd = +ui.shadows.value;
   const hil = +ui.highlights.value;
   const tone = shd !== 0 || hil !== 0;
@@ -414,6 +429,12 @@ function grabFrame() {
       g = y + (g - y) * sat;
       b = y + (b - y) * sat;
     }
+    if (hue) {
+      const r0 = r, g0 = g, b0 = b;
+      r = r0 * m00 + g0 * m01 + b0 * m02;
+      g = r0 * m10 + g0 * m11 + b0 * m12;
+      b = r0 * m20 + g0 * m21 + b0 * m22;
+    }
     if (inv) { r = 255 - r; g = 255 - g; b = 255 - b; }
     d[p] = clamp255(r);
     d[p + 1] = clamp255(g);
@@ -424,6 +445,7 @@ function grabFrame() {
 }
 
 function render() {
+  state.fx = soundFx();
   const d = grabFrame();
   ctx.fillStyle = BG;
   ctx.fillRect(0, 0, out.width, out.height);
@@ -439,7 +461,8 @@ function renderEmoji(d) {
   const blank = ui.blank.checked;
   const n = pal.byLum.length;
   const grid = state.lastGlyphs;
-  const pulse = pulseAmount();
+  const fx = state.fx;
+  if (fx) zoomPunch(ctx, fx);
 
   for (let y = 0; y < rows; y++) {
     for (let x = 0; x < cols; x++) {
@@ -459,16 +482,11 @@ function renderEmoji(d) {
         e = pal.entries[nearestEmoji(pal, r, g, b)];
       }
       grid[y * cols + x] = e.i;
-      if (pulse) {
-        // Brighter cells swell more, so the subject "breathes" with the sound.
-        const k = 1 + pulse * (0.35 + 0.65 * (l / 255));
-        const w = cellW * k, h = cellH * k;
-        ctx.drawImage(pal.atlas, e.sx, e.sy, pal.cw, pal.ch, x * cellW - (w - cellW) / 2, y * cellH - (h - cellH) / 2, w, h);
-      } else {
-        ctx.drawImage(pal.atlas, e.sx, e.sy, pal.cw, pal.ch, x * cellW, y * cellH, cellW, cellH);
-      }
+      if (fx) drawCellFx(ctx, pal, e, x, y, cellW, cellH, fx, l / 255);
+      else ctx.drawImage(pal.atlas, e.sx, e.sy, pal.cw, pal.ch, x * cellW, y * cellH, cellW, cellH);
     }
   }
+  if (fx) ctx.setTransform(1, 0, 0, 1, 0, 0);
 }
 
 function renderText(d) {
@@ -479,10 +497,11 @@ function renderText(d) {
   const grid = state.lastGlyphs;
   const braille = state.kind === 'braille';
   const sw = sample.width;
-  const pulse = pulseAmount() * 0.7;
+  const fx = state.fx;
 
   lctx.globalCompositeOperation = 'source-over';
   lctx.clearRect(0, 0, layer.width, layer.height);
+  if (fx) zoomPunch(lctx, fx);
 
   for (let y = 0; y < rows; y++) {
     for (let x = 0; x < cols; x++) {
@@ -505,13 +524,8 @@ function renderText(d) {
       grid[y * cols + x] = idx;
       const e = es[idx];
       if (e.density === 0) continue;
-      if (pulse) {
-        const k = 1 + pulse * (braille ? 0.8 : 0.3 + 0.7 * (idx / (n - 1)));
-        const w = cellW * k, h = cellH * k;
-        lctx.drawImage(pal.atlas, e.sx, e.sy, pal.cw, pal.ch, x * cellW - (w - cellW) / 2, y * cellH - (h - cellH) / 2, w, h);
-      } else {
-        lctx.drawImage(pal.atlas, e.sx, e.sy, pal.cw, pal.ch, x * cellW, y * cellH, cellW, cellH);
-      }
+      if (fx) drawCellFx(lctx, pal, e, x, y, cellW, cellH, fx, braille ? 0.8 : idx / (n - 1));
+      else lctx.drawImage(pal.atlas, e.sx, e.sy, pal.cw, pal.ch, x * cellW, y * cellH, cellW, cellH);
     }
   }
 
@@ -527,6 +541,7 @@ function renderText(d) {
     lctx.fillStyle = ink;
     lctx.fillRect(0, 0, layer.width, layer.height);
   }
+  if (fx) lctx.setTransform(1, 0, 0, 1, 0, 0);
   ctx.drawImage(layer, 0, 0);
 }
 
@@ -541,6 +556,8 @@ function loop() {
   // Show the on-camera record button only while the live view is up.
   const showFab = !!state.stream && ui.overlay.hidden;
   if (ui.recordFab.hidden === showFab) ui.recordFab.hidden = !showFab;
+  const showFlip = showFab && state.cameraCount !== 1;
+  if (ui.flipFab.hidden === showFlip) ui.flipFab.hidden = !showFlip;
   updateSound();
   if (rec.recorder) copyFrameToRecording();
   if (!state.paused && video.readyState >= 2) {
@@ -716,7 +733,23 @@ function downloadClip() {
 // Camera
 // ---------------------------------------------------------------------------
 
-async function startCamera() {
+// Open a camera facing `facing`. With `exact`, insist on that side first
+// (iOS sometimes ignores a plain preference), falling back to a preference
+// if the device can't satisfy it (e.g. laptops whose webcam has no facing).
+async function openCamera(facing, exact) {
+  const size = { width: { ideal: 1280 }, height: { ideal: 720 } };
+  if (exact) {
+    try {
+      return await navigator.mediaDevices.getUserMedia({ video: { ...size, facingMode: { exact: facing } }, audio: false });
+    } catch (err) {
+      if (err.name !== 'OverconstrainedError' && err.name !== 'NotFoundError') throw err;
+      dbg(`exact facing ${facing} unavailable (${err.name}), falling back`);
+    }
+  }
+  return navigator.mediaDevices.getUserMedia({ video: { ...size, facingMode: facing }, audio: false });
+}
+
+async function startCamera({ exact = false, quietFail = false } = {}) {
   dbg('startCamera()');
   ui.error.textContent = '';
   if (!navigator.mediaDevices?.getUserMedia) {
@@ -734,10 +767,7 @@ async function startCamera() {
   try {
     state.stream?.getTracks().forEach((t) => t.stop());
     dbg('calling getUserMedia, facing=' + state.facing);
-    state.stream = await navigator.mediaDevices.getUserMedia({
-      video: { facingMode: state.facing, width: { ideal: 1280 }, height: { ideal: 720 } },
-      audio: false,
-    });
+    state.stream = await openCamera(state.facing, exact);
     const track = state.stream.getVideoTracks()[0];
     if (track) {
       track.addEventListener('ended', () => {
@@ -759,8 +789,11 @@ async function startCamera() {
       ui.status.textContent = '';
     }
     layout();
+    countCameras();
+    return true;
   } catch (err) {
     dbg('startCamera failed:', err.name, err.message);
+    if (quietFail) return false;
     const msg = {
       NotAllowedError: 'Camera permission was denied. Allow it in your browser settings and try again.',
       NotFoundError: 'No camera was found on this device.',
@@ -768,11 +801,61 @@ async function startCamera() {
     }[err.name];
     ui.error.textContent = `${msg || `Could not start camera: ${err.message}`} (${err.name})`;
     ui.overlay.hidden = false;
+    return false;
   } finally {
     clearTimeout(slow);
     ui.start.disabled = false;
     if (!ui.overlay.hidden && !ui.start.onclick) ui.status.textContent = '';
   }
+}
+
+// Device labels are only visible after permission, so count after starting.
+async function countCameras() {
+  try {
+    const devices = await navigator.mediaDevices.enumerateDevices();
+    state.cameraCount = devices.filter((d) => d.kind === 'videoinput').length;
+    dbg(`cameras: ${state.cameraCount}`);
+  } catch {
+    state.cameraCount = 0; // unknown: keep the flip button
+  }
+}
+
+const deviceIdOf = (stream) => stream?.getVideoTracks()[0]?.getSettings?.().deviceId;
+
+// Switch between the front and back camera. Rendering keeps the last frame
+// on screen while the new camera starts, and recordings carry on.
+async function switchCamera() {
+  if (state.switching) return;
+  const prev = state.facing;
+  state.facing = prev === 'user' ? 'environment' : 'user';
+  ui.mirror.checked = state.facing === 'user';
+  if (!state.stream) {
+    toast(state.facing === 'user' ? '🤳 Front camera' : '📷 Back camera');
+    return;
+  }
+  state.switching = true;
+  ui.flipFab.classList.add('busy');
+  ui.flip.disabled = true;
+  const prevId = deviceIdOf(state.stream);
+  dbg(`switching camera ${prev} -> ${state.facing}`);
+  const ok = await startCamera({ exact: true, quietFail: true });
+  const sameDevice = ok && prevId && deviceIdOf(state.stream) === prevId;
+  if (!ok || sameDevice) {
+    state.facing = prev;
+    ui.mirror.checked = prev === 'user';
+    if (sameDevice) {
+      state.cameraCount = 1;
+      toast('This device has only one camera');
+    } else {
+      toast('Couldn’t switch camera');
+      await startCamera(); // bring the previous camera back
+    }
+  } else {
+    toast(state.facing === 'user' ? '🤳 Front camera' : '📷 Back camera');
+  }
+  state.switching = false;
+  ui.flipFab.classList.remove('busy');
+  ui.flip.disabled = false;
 }
 
 // Resolve once the video is playing. If the browser refuses or stalls
@@ -900,11 +983,64 @@ const sound = {
   avg: 0,
   lastBeat: 0,
   lastShuffle: 0,
+  kick: 0, // 1 on a beat, decays quickly: flash, shake, zoom punch
+  hue: 0, // degrees of hue shift, kicked on beats, eases back to 0
+  ripples: [], // start times of beat ripples
 };
+
+const RIPPLE_MS = 700;
 
 const soundPulses = () => ui.sound.value === 'pulse' || ui.sound.value === 'both';
 const soundShuffles = () => ui.sound.value === 'shuffle' || ui.sound.value === 'both';
-const pulseAmount = () => (sound.analyser && soundPulses() && sound.level > 0.03 ? sound.level : 0);
+// Per-frame sound effects for the renderer, or null when off or silent.
+function soundFx() {
+  if (!sound.analyser || !soundPulses()) return null;
+  const strength = +ui.fxStrength.value;
+  if (strength <= 0) return null;
+  const now = performance.now();
+  const maxD = Math.hypot(out.width, out.height) / 2;
+  const ripples = [];
+  for (const t0 of sound.ripples) {
+    const age = (now - t0) / RIPPLE_MS;
+    if (age < 1) ripples.push({ r: age * maxD, w: maxD * 0.16, amp: strength * 1.5 * (1 - age) });
+  }
+  const fx = {
+    swell: strength * sound.level * 1.5,
+    kick: strength * sound.kick,
+    hue: strength * sound.hue,
+    ripples,
+    cx: out.width / 2,
+    cy: out.height / 2,
+  };
+  if (fx.swell < 0.02 && fx.kick < 0.02 && !ripples.length && Math.abs(fx.hue) < 0.5) return null;
+  return fx;
+}
+
+// Whole-picture zoom that kicks inward on beats.
+function zoomPunch(c, fx) {
+  const z = 1 + fx.swell * 0.04 + fx.kick * 0.1;
+  c.setTransform(z, 0, 0, z, fx.cx * (1 - z), fx.cy * (1 - z));
+}
+
+// Draw one glyph with the sound effects: swell (brighter cells more),
+// passing beat ripples, and a shake on beats.
+function drawCellFx(c, pal, e, x, y, cellW, cellH, fx, bright) {
+  let k = 1 + fx.swell * (0.3 + 0.7 * bright);
+  if (fx.ripples.length) {
+    const d = Math.hypot((x + 0.5) * cellW - fx.cx, (y + 0.5) * cellH - fx.cy);
+    for (const rp of fx.ripples) {
+      const t = 1 - Math.abs(d - rp.r) / rp.w;
+      if (t > 0) k += rp.amp * t;
+    }
+  }
+  const w = cellW * k, h = cellH * k;
+  let dx = x * cellW - (w - cellW) / 2, dy = y * cellH - (h - cellH) / 2;
+  if (fx.kick > 0.05) {
+    dx += (Math.random() - 0.5) * cellW * fx.kick;
+    dy += (Math.random() - 0.5) * cellH * fx.kick;
+  }
+  c.drawImage(pal.atlas, e.sx, e.sy, pal.cw, pal.ch, dx, dy, w, h);
+}
 
 async function startMic() {
   // Create/resume the audio context synchronously inside the user's tap;
@@ -925,7 +1061,7 @@ async function startMic() {
   sound.analyser.smoothingTimeConstant = 0;
   src.connect(sound.analyser); // not connected to the speakers: no feedback
   sound.buf = new Float32Array(sound.analyser.fftSize);
-  sound.peak = 0.02;
+  sound.peak = 0.01;
   sound.avg = 0;
   dbg(`microphone on, audio context ${sound.ctx.state}, ${sound.ctx.sampleRate} Hz`);
 }
@@ -935,6 +1071,9 @@ function stopMic() {
   sound.stream = null;
   sound.analyser = null;
   sound.level = 0;
+  sound.kick = 0;
+  sound.hue = 0;
+  sound.ripples = [];
   ui.meterFill.style.transform = 'scaleX(0)';
   dbg('microphone off');
 }
@@ -942,6 +1081,7 @@ function stopMic() {
 async function onSoundModeChange() {
   const mode = ui.sound.value;
   ui.meter.hidden = mode === 'off';
+  ui.soundOpts.hidden = mode === 'off';
   if (mode === 'off') {
     stopMic();
     return;
@@ -954,6 +1094,7 @@ async function onSoundModeChange() {
     dbg('microphone failed:', err.name, err.message);
     ui.sound.value = 'off';
     ui.meter.hidden = true;
+    ui.soundOpts.hidden = true;
     toast(err.name === 'NotAllowedError' ? 'Microphone permission was denied' : 'Couldn’t start the microphone');
   }
 }
@@ -973,19 +1114,28 @@ function updateSound() {
   for (let i = 0; i < sound.buf.length; i++) sum += sound.buf[i] * sound.buf[i];
   const rms = Math.sqrt(sum / sound.buf.length);
 
-  // Adaptive gain: compare against the loudest recent sound, so it works
-  // for a quiet room and a loud party alike. A small floor ignores hiss.
-  sound.peak = Math.max(rms, sound.peak * 0.997, 0.02);
-  const target = Math.min(1, Math.max(0, rms - 0.004) / sound.peak);
-  // Fast attack, slower release.
-  sound.level = target > sound.level ? sound.level + (target - sound.level) * 0.7 : sound.level * 0.86;
+  // Adaptive gain: compare against the loudest recent sound (forgotten
+  // within a second or two), so quiet rooms and loud music both fill the
+  // range. Phone mics give a quiet raw signal, so the floors are low; the
+  // power curve lifts quiet sounds further. Sensitivity scales it all.
+  const sens = +ui.sens.value;
+  sound.peak = Math.max(rms, sound.peak * 0.992, 0.006 / sens);
+  const g = Math.max(0, rms - 0.0012 / sens) / sound.peak;
+  const target = Math.min(1, Math.pow(g * (0.5 + sens * 0.35), 0.6));
+  // Fast attack, quick release, so it tracks every syllable and drum hit.
+  sound.level = target > sound.level ? sound.level + (target - sound.level) * 0.75 : sound.level * 0.82;
 
-  // Beat: a sudden jump well above the recent average loudness.
+  // Beat: a jump above the recent average loudness.
   const now = performance.now();
-  const isBeat = rms > sound.avg * 1.8 && rms > 0.03 && now - sound.lastBeat > 250;
+  const isBeat = rms > sound.avg * (1 + 0.9 / sens) && rms > 0.004 / sens && now - sound.lastBeat > 160;
   sound.avg = sound.avg * 0.93 + rms * 0.07;
+  sound.kick *= 0.86;
+  sound.hue *= 0.96;
   if (isBeat) {
     sound.lastBeat = now;
+    sound.kick = 1;
+    sound.hue += (Math.random() < 0.5 ? -1 : 1) * (50 + Math.random() * 60);
+    sound.ripples = sound.ripples.filter((t) => now - t < RIPPLE_MS).concat(now).slice(-4);
     ui.meter.classList.remove('beat');
     void ui.meter.offsetWidth;
     ui.meter.classList.add('beat');
@@ -1016,6 +1166,8 @@ const ADJUSTMENTS = [
 
 function syncLabels() {
   for (const [input, output, fmt] of ADJUSTMENTS) output.textContent = fmt(+input.value);
+  ui.sensOut.textContent = `${(+ui.sens.value).toFixed(1)}×`;
+  ui.fxOut.textContent = `${Math.round(+ui.fxStrength.value * 100)}%`;
 }
 
 function resetAdjustments() {
@@ -1048,11 +1200,8 @@ ui.resetAdjust.addEventListener('click', resetAdjustments);
 for (const el of [ui.match, ui.ink, ui.mirror, ui.invert, ui.blank]) {
   el.addEventListener('change', () => state.paused && render());
 }
-ui.flip.addEventListener('click', () => {
-  state.facing = state.facing === 'user' ? 'environment' : 'user';
-  ui.mirror.checked = state.facing === 'user';
-  if (state.stream) startCamera();
-});
+ui.flip.addEventListener('click', switchCamera);
+ui.flipFab.addEventListener('click', switchCamera);
 ui.pause.addEventListener('click', () => {
   state.paused = !state.paused;
   ui.pause.textContent = state.paused ? '▶ Resume' : '⏸ Pause';
@@ -1061,6 +1210,8 @@ ui.snap.addEventListener('click', snapshot);
 ui.copy.addEventListener('click', copyText);
 ui.random.addEventListener('click', () => randomize());
 ui.sound.addEventListener('change', onSoundModeChange);
+ui.sens.addEventListener('input', syncLabels);
+ui.fxStrength.addEventListener('input', syncLabels);
 const toggleRecording = () => (rec.recorder ? stopRecording() : startRecording());
 ui.record.addEventListener('click', toggleRecording);
 ui.recordFab.addEventListener('click', toggleRecording);
@@ -1075,6 +1226,7 @@ document.addEventListener('keydown', (e) => {
   if (e.key === 's') snapshot();
   if (e.key === 'r') ui.record.click();
   if (e.key === 'd') randomize();
+  if (e.key === 'f') switchCamera();
   if (e.key === 'Escape' && !ui.clip.hidden) closeClip();
 });
 
@@ -1085,5 +1237,5 @@ try {
 } catch (err) {
   ui.error.textContent = `Setup failed: ${err.message}`;
 }
-window.emojiFiedReady = '10';
-dbg('app.js v10 initialised');
+window.emojiFiedReady = '12';
+dbg('app.js v12 initialised');
