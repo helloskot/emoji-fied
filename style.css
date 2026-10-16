@@ -101,6 +101,8 @@ main {
 .overlay p { margin: 10px 0; }
 .overlay .note { color: var(--muted); font-size: 13px; }
 .error { color: #ff7a7a; min-height: 1em; font-size: 14px; }
+.status { color: var(--text); font-size: 14px; min-height: 1em; }
+.version { opacity: 0.6; }
 
 .controls {
   background: var(--panel);

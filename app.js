@@ -57,6 +57,7 @@ const ui = {
   overlay: $('#overlay'),
   start: $('#start'),
   error: $('#error'),
+  status: $('#status'),
   style: $('#style'),
   custom: $('#custom'),
   customField: $('#customField'),
@@ -484,26 +485,38 @@ async function startCamera() {
     return;
   }
   ui.start.disabled = true;
+  ui.status.textContent = 'Asking for camera permission…';
+  const slow = setTimeout(() => {
+    ui.status.textContent =
+      'Still waiting for the camera. If no prompt appeared, check Safari: page menu (aA) → Website Settings → Camera → Allow.';
+  }, 6000);
   try {
     state.stream?.getTracks().forEach((t) => t.stop());
     state.stream = await navigator.mediaDevices.getUserMedia({
       video: { facingMode: state.facing, width: { ideal: 1280 }, height: { ideal: 720 } },
       audio: false,
     });
+    clearTimeout(slow);
+    ui.status.textContent = 'Starting video…';
     video.srcObject = state.stream;
-    ui.overlay.hidden = true;
-    layout();
     await playVideo();
+    if (!video.paused) {
+      ui.overlay.hidden = true;
+      ui.status.textContent = '';
+    }
+    layout();
   } catch (err) {
     const msg = {
       NotAllowedError: 'Camera permission was denied. Allow it in your browser settings and try again.',
       NotFoundError: 'No camera was found on this device.',
       NotReadableError: 'The camera is in use by another app.',
     }[err.name];
-    ui.error.textContent = msg || `Could not start camera: ${err.message || err.name}`;
+    ui.error.textContent = `${msg || `Could not start camera: ${err.message}`} (${err.name})`;
     ui.overlay.hidden = false;
   } finally {
+    clearTimeout(slow);
     ui.start.disabled = false;
+    if (!ui.overlay.hidden && !ui.start.onclick) ui.status.textContent = '';
   }
 }
 
@@ -518,11 +531,13 @@ async function playVideo() {
   } catch (err) {
     if (!video.paused) return;
     ui.error.textContent = '';
+    ui.status.textContent = 'Safari needs one more tap to show the video.';
     ui.start.textContent = 'Tap to show camera';
     ui.overlay.hidden = false;
     ui.start.onclick = () => {
       video.play().catch(() => {});
       ui.overlay.hidden = true;
+      ui.status.textContent = '';
       ui.start.textContent = 'Start camera';
       ui.start.onclick = null;
     };
@@ -618,4 +633,4 @@ try {
 } catch (err) {
   ui.error.textContent = `Setup failed: ${err.message}`;
 }
-window.emojiFiedReady = true;
+window.emojiFiedReady = '3';
