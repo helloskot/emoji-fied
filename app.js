@@ -42,7 +42,9 @@ const MONO_FONT = 'ui-monospace,"SF Mono",Menlo,Consolas,"DejaVu Sans Mono","Not
 const TEXT_ASPECT = 0.6;
 const BRAILLE_ASPECT = 0.6;
 
-const OUTPUT_WIDTH = 1280;
+// Longest side of the output canvas. Portrait phone cameras would otherwise
+// produce a very tall canvas, and iOS Safari caps total canvas memory.
+const OUTPUT_LONG_SIDE = 1280;
 const BG = '#000';
 
 // ---------------------------------------------------------------------------
@@ -166,7 +168,16 @@ function buildAtlas(glyphs, { emoji, cw, ch, draw }) {
     return { glyph, sx, sy, r, g, b, lum: luma(r, g, b), density: cov / n };
   });
 
-  return { atlas, cw, ch, entries };
+  // The measuring canvas is CPU-backed (willReadFrequently), which iOS Safari
+  // is very slow to draw *from*: thousands of blits per frame can exhaust
+  // memory and crash the tab. Copy it once into a normal, GPU-friendly canvas.
+  const sprites = document.createElement('canvas');
+  sprites.width = atlas.width;
+  sprites.height = atlas.height;
+  sprites.getContext('2d').drawImage(atlas, 0, 0);
+  atlas.width = atlas.height = 0;
+
+  return { atlas: sprites, cw, ch, entries };
 }
 
 function buildEmojiPalette(chars) {
@@ -308,12 +319,18 @@ function layout() {
   const aspect =
     state.kind === 'emoji' ? 1 : state.kind === 'braille' ? BRAILLE_ASPECT : TEXT_ASPECT;
 
-  state.cellW = OUTPUT_WIDTH / state.cols;
+  const outW = vw >= vh ? OUTPUT_LONG_SIDE : Math.round((OUTPUT_LONG_SIDE * vw) / vh);
+  state.cellW = outW / state.cols;
   state.cellH = state.cellW / aspect;
-  state.rows = Math.max(1, Math.round((OUTPUT_WIDTH * vh) / vw / state.cellH));
+  state.rows = Math.max(1, Math.round((outW * vh) / vw / state.cellH));
 
-  out.width = layer.width = OUTPUT_WIDTH;
-  out.height = layer.height = Math.round(state.rows * state.cellH);
+  out.width = outW;
+  out.height = Math.round(state.rows * state.cellH);
+  // The text-tinting layer is only needed for unicode styles.
+  const needLayer = state.kind !== 'emoji';
+  layer.width = needLayer ? out.width : 1;
+  layer.height = needLayer ? out.height : 1;
+  dbg(`layout: video ${vw}x${vh} -> canvas ${out.width}x${out.height}, grid ${state.cols}x${state.rows}`);
   if (state.stream) ui.stage.style.aspectRatio = `${out.width} / ${out.height}`;
 
   const sub = state.kind === 'braille' ? [2, 4] : [1, 1];
@@ -472,6 +489,7 @@ function loop() {
   const now = performance.now();
   if (now - fpsT >= 1000) {
     ui.fps.textContent = state.stream ? `${state.cols}×${state.rows} · ${frames} fps` : '';
+    if (state.stream && (loop.ticks = (loop.ticks || 0) + 1) <= 10) dbg(`running: ${frames} fps`);
     frames = 0;
     fpsT = now;
   }
@@ -654,5 +672,5 @@ try {
 } catch (err) {
   ui.error.textContent = `Setup failed: ${err.message}`;
 }
-window.emojiFiedReady = '4';
-dbg('app.js v4 initialised');
+window.emojiFiedReady = '5';
+dbg('app.js v5 initialised');
