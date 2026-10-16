@@ -96,6 +96,7 @@ const ui = {
   blank: $('#blank'),
   blankField: $('#blankField'),
   flip: $('#flip'),
+  flipFab: $('#flipFab'),
   pause: $('#pause'),
   snap: $('#snap'),
   copy: $('#copy'),
@@ -293,6 +294,8 @@ const state = {
   paused: false,
   facing: 'user',
   stream: null,
+  cameraCount: 0, // 0 = unknown
+  switching: false,
   lastGlyphs: null, // Int16Array of palette indices for "copy text" (-1 = blank)
 };
 
@@ -553,6 +556,8 @@ function loop() {
   // Show the on-camera record button only while the live view is up.
   const showFab = !!state.stream && ui.overlay.hidden;
   if (ui.recordFab.hidden === showFab) ui.recordFab.hidden = !showFab;
+  const showFlip = showFab && state.cameraCount !== 1;
+  if (ui.flipFab.hidden === showFlip) ui.flipFab.hidden = !showFlip;
   updateSound();
   if (rec.recorder) copyFrameToRecording();
   if (!state.paused && video.readyState >= 2) {
@@ -728,7 +733,23 @@ function downloadClip() {
 // Camera
 // ---------------------------------------------------------------------------
 
-async function startCamera() {
+// Open a camera facing `facing`. With `exact`, insist on that side first
+// (iOS sometimes ignores a plain preference), falling back to a preference
+// if the device can't satisfy it (e.g. laptops whose webcam has no facing).
+async function openCamera(facing, exact) {
+  const size = { width: { ideal: 1280 }, height: { ideal: 720 } };
+  if (exact) {
+    try {
+      return await navigator.mediaDevices.getUserMedia({ video: { ...size, facingMode: { exact: facing } }, audio: false });
+    } catch (err) {
+      if (err.name !== 'OverconstrainedError' && err.name !== 'NotFoundError') throw err;
+      dbg(`exact facing ${facing} unavailable (${err.name}), falling back`);
+    }
+  }
+  return navigator.mediaDevices.getUserMedia({ video: { ...size, facingMode: facing }, audio: false });
+}
+
+async function startCamera({ exact = false, quietFail = false } = {}) {
   dbg('startCamera()');
   ui.error.textContent = '';
   if (!navigator.mediaDevices?.getUserMedia) {
@@ -746,10 +767,7 @@ async function startCamera() {
   try {
     state.stream?.getTracks().forEach((t) => t.stop());
     dbg('calling getUserMedia, facing=' + state.facing);
-    state.stream = await navigator.mediaDevices.getUserMedia({
-      video: { facingMode: state.facing, width: { ideal: 1280 }, height: { ideal: 720 } },
-      audio: false,
-    });
+    state.stream = await openCamera(state.facing, exact);
     const track = state.stream.getVideoTracks()[0];
     if (track) {
       track.addEventListener('ended', () => {
@@ -771,8 +789,11 @@ async function startCamera() {
       ui.status.textContent = '';
     }
     layout();
+    countCameras();
+    return true;
   } catch (err) {
     dbg('startCamera failed:', err.name, err.message);
+    if (quietFail) return false;
     const msg = {
       NotAllowedError: 'Camera permission was denied. Allow it in your browser settings and try again.',
       NotFoundError: 'No camera was found on this device.',
@@ -780,11 +801,61 @@ async function startCamera() {
     }[err.name];
     ui.error.textContent = `${msg || `Could not start camera: ${err.message}`} (${err.name})`;
     ui.overlay.hidden = false;
+    return false;
   } finally {
     clearTimeout(slow);
     ui.start.disabled = false;
     if (!ui.overlay.hidden && !ui.start.onclick) ui.status.textContent = '';
   }
+}
+
+// Device labels are only visible after permission, so count after starting.
+async function countCameras() {
+  try {
+    const devices = await navigator.mediaDevices.enumerateDevices();
+    state.cameraCount = devices.filter((d) => d.kind === 'videoinput').length;
+    dbg(`cameras: ${state.cameraCount}`);
+  } catch {
+    state.cameraCount = 0; // unknown: keep the flip button
+  }
+}
+
+const deviceIdOf = (stream) => stream?.getVideoTracks()[0]?.getSettings?.().deviceId;
+
+// Switch between the front and back camera. Rendering keeps the last frame
+// on screen while the new camera starts, and recordings carry on.
+async function switchCamera() {
+  if (state.switching) return;
+  const prev = state.facing;
+  state.facing = prev === 'user' ? 'environment' : 'user';
+  ui.mirror.checked = state.facing === 'user';
+  if (!state.stream) {
+    toast(state.facing === 'user' ? '🤳 Front camera' : '📷 Back camera');
+    return;
+  }
+  state.switching = true;
+  ui.flipFab.classList.add('busy');
+  ui.flip.disabled = true;
+  const prevId = deviceIdOf(state.stream);
+  dbg(`switching camera ${prev} -> ${state.facing}`);
+  const ok = await startCamera({ exact: true, quietFail: true });
+  const sameDevice = ok && prevId && deviceIdOf(state.stream) === prevId;
+  if (!ok || sameDevice) {
+    state.facing = prev;
+    ui.mirror.checked = prev === 'user';
+    if (sameDevice) {
+      state.cameraCount = 1;
+      toast('This device has only one camera');
+    } else {
+      toast('Couldn’t switch camera');
+      await startCamera(); // bring the previous camera back
+    }
+  } else {
+    toast(state.facing === 'user' ? '🤳 Front camera' : '📷 Back camera');
+  }
+  state.switching = false;
+  ui.flipFab.classList.remove('busy');
+  ui.flip.disabled = false;
 }
 
 // Resolve once the video is playing. If the browser refuses or stalls
@@ -1129,11 +1200,8 @@ ui.resetAdjust.addEventListener('click', resetAdjustments);
 for (const el of [ui.match, ui.ink, ui.mirror, ui.invert, ui.blank]) {
   el.addEventListener('change', () => state.paused && render());
 }
-ui.flip.addEventListener('click', () => {
-  state.facing = state.facing === 'user' ? 'environment' : 'user';
-  ui.mirror.checked = state.facing === 'user';
-  if (state.stream) startCamera();
-});
+ui.flip.addEventListener('click', switchCamera);
+ui.flipFab.addEventListener('click', switchCamera);
 ui.pause.addEventListener('click', () => {
   state.paused = !state.paused;
   ui.pause.textContent = state.paused ? '▶ Resume' : '⏸ Pause';
@@ -1158,6 +1226,7 @@ document.addEventListener('keydown', (e) => {
   if (e.key === 's') snapshot();
   if (e.key === 'r') ui.record.click();
   if (e.key === 'd') randomize();
+  if (e.key === 'f') switchCamera();
   if (e.key === 'Escape' && !ui.clip.hidden) closeClip();
 });
 
@@ -1168,5 +1237,5 @@ try {
 } catch (err) {
   ui.error.textContent = `Setup failed: ${err.message}`;
 }
-window.emojiFiedReady = '11';
-dbg('app.js v11 initialised');
+window.emojiFiedReady = '12';
+dbg('app.js v12 initialised');

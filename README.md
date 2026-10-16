@@ -22,6 +22,9 @@ flashes, shakes and zoom-punches the picture; *Shuffle on beats* switches to a r
 beat, or both. **Sensitivity** and **Effect strength** sliders tune it. While it's on,
 recorded clips include the audio.
 
+Front/back camera: the switch button over the camera view (or `F`); mirroring
+follows the camera and recordings carry on through a switch.
+
 Extras: 🎲 randomize (`D`: random style, ink, detail and tone, sometimes a
 random custom emoji set), detail slider, adjustments (contrast, brightness,
 saturation, shadows, highlights, with reset), invert, mirror, front/back camera
