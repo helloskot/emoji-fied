@@ -64,6 +64,9 @@ const ui = {
   status: $('#status'),
   style: $('#style'),
   random: $('#random'),
+  sound: $('#sound'),
+  meter: $('#meter'),
+  meterFill: $('#meterFill'),
   custom: $('#custom'),
   customField: $('#customField'),
   cols: $('#cols'),
@@ -387,7 +390,7 @@ function grabFrame() {
   const img = sctx.getImageData(0, 0, sw, sh);
   const d = img.data;
   const c = +ui.contrast.value;
-  const br = +ui.bright.value * 255;
+  const br = (+ui.bright.value + pulseAmount() * 0.12) * 255;
   const sat = +ui.sat.value;
   const shd = +ui.shadows.value;
   const hil = +ui.highlights.value;
@@ -436,6 +439,7 @@ function renderEmoji(d) {
   const blank = ui.blank.checked;
   const n = pal.byLum.length;
   const grid = state.lastGlyphs;
+  const pulse = pulseAmount();
 
   for (let y = 0; y < rows; y++) {
     for (let x = 0; x < cols; x++) {
@@ -455,7 +459,14 @@ function renderEmoji(d) {
         e = pal.entries[nearestEmoji(pal, r, g, b)];
       }
       grid[y * cols + x] = e.i;
-      ctx.drawImage(pal.atlas, e.sx, e.sy, pal.cw, pal.ch, x * cellW, y * cellH, cellW, cellH);
+      if (pulse) {
+        // Brighter cells swell more, so the subject "breathes" with the sound.
+        const k = 1 + pulse * (0.35 + 0.65 * (l / 255));
+        const w = cellW * k, h = cellH * k;
+        ctx.drawImage(pal.atlas, e.sx, e.sy, pal.cw, pal.ch, x * cellW - (w - cellW) / 2, y * cellH - (h - cellH) / 2, w, h);
+      } else {
+        ctx.drawImage(pal.atlas, e.sx, e.sy, pal.cw, pal.ch, x * cellW, y * cellH, cellW, cellH);
+      }
     }
   }
 }
@@ -468,6 +479,7 @@ function renderText(d) {
   const grid = state.lastGlyphs;
   const braille = state.kind === 'braille';
   const sw = sample.width;
+  const pulse = pulseAmount() * 0.7;
 
   lctx.globalCompositeOperation = 'source-over';
   lctx.clearRect(0, 0, layer.width, layer.height);
@@ -493,7 +505,13 @@ function renderText(d) {
       grid[y * cols + x] = idx;
       const e = es[idx];
       if (e.density === 0) continue;
-      lctx.drawImage(pal.atlas, e.sx, e.sy, pal.cw, pal.ch, x * cellW, y * cellH, cellW, cellH);
+      if (pulse) {
+        const k = 1 + pulse * (braille ? 0.8 : 0.3 + 0.7 * (idx / (n - 1)));
+        const w = cellW * k, h = cellH * k;
+        lctx.drawImage(pal.atlas, e.sx, e.sy, pal.cw, pal.ch, x * cellW - (w - cellW) / 2, y * cellH - (h - cellH) / 2, w, h);
+      } else {
+        lctx.drawImage(pal.atlas, e.sx, e.sy, pal.cw, pal.ch, x * cellW, y * cellH, cellW, cellH);
+      }
     }
   }
 
@@ -523,6 +541,7 @@ function loop() {
   // Show the on-camera record button only while the live view is up.
   const showFab = !!state.stream && ui.overlay.hidden;
   if (ui.recordFab.hidden === showFab) ui.recordFab.hidden = !showFab;
+  updateSound();
   if (rec.recorder) copyFrameToRecording();
   if (!state.paused && video.readyState >= 2) {
     render();
@@ -549,9 +568,11 @@ function loop() {
 const MAX_CLIP_SECONDS = 60;
 const rec = { recorder: null, chunks: [], canvas: null, ctx: null, started: 0, timer: 0, file: null, url: null };
 
-function pickRecordingType() {
+function pickRecordingType(withAudio) {
   if (!window.MediaRecorder || !HTMLCanvasElement.prototype.captureStream) return null;
-  const types = ['video/mp4;codecs=avc1', 'video/mp4', 'video/webm;codecs=vp9', 'video/webm;codecs=vp8', 'video/webm'];
+  const types = withAudio
+    ? ['video/mp4;codecs=avc1,mp4a.40.2', 'video/mp4', 'video/webm;codecs=vp9,opus', 'video/webm;codecs=vp8,opus', 'video/webm']
+    : ['video/mp4;codecs=avc1', 'video/mp4', 'video/webm;codecs=vp9', 'video/webm;codecs=vp8', 'video/webm'];
   return types.find((t) => MediaRecorder.isTypeSupported?.(t)) ?? '';
 }
 
@@ -572,7 +593,9 @@ function startRecording() {
     toast('Start the camera first');
     return;
   }
-  const type = pickRecordingType();
+  // While "React to sound" is on, the microphone goes into the clip too.
+  const audioTracks = sound.stream ? sound.stream.getAudioTracks().filter((t) => t.readyState === 'live') : [];
+  const type = pickRecordingType(audioTracks.length > 0);
   if (type === null) {
     toast('Recording isn’t supported in this browser');
     return;
@@ -585,7 +608,8 @@ function startRecording() {
   rec.ctx = rec.canvas.getContext('2d');
   copyFrameToRecording();
 
-  const stream = rec.canvas.captureStream(30);
+  const canvasStream = rec.canvas.captureStream(30);
+  const stream = new MediaStream([...canvasStream.getVideoTracks(), ...audioTracks]);
   let recorder;
   try {
     const opts = { videoBitsPerSecond: 6_000_000 };
@@ -598,7 +622,7 @@ function startRecording() {
   }
   rec.chunks = [];
   recorder.ondataavailable = (e) => e.data && e.data.size && rec.chunks.push(e.data);
-  recorder.onstop = () => finishRecording(recorder, stream, type);
+  recorder.onstop = () => finishRecording(recorder, canvasStream, type, audioTracks.length > 0);
   recorder.onerror = (e) => {
     dbg('recorder error:', e.error?.name, e.error?.message);
     toast('Recording failed');
@@ -608,7 +632,7 @@ function startRecording() {
   rec.started = performance.now();
   rec.timer = setInterval(updateRecordButton, 250);
   updateRecordButton();
-  dbg(`recording started: ${rec.canvas.width}x${rec.canvas.height}, type=${recorder.mimeType || type || 'default'}`);
+  dbg(`recording started: ${rec.canvas.width}x${rec.canvas.height}, type=${recorder.mimeType || type || 'default'}, audio=${audioTracks.length > 0}`);
 }
 
 function stopRecording() {
@@ -639,8 +663,9 @@ function updateRecordButton() {
   }
 }
 
-function finishRecording(recorder, stream, type) {
-  stream.getTracks().forEach((t) => t.stop());
+function finishRecording(recorder, canvasStream, type, withAudio) {
+  // Stop only the canvas track: the microphone stays on for "React to sound".
+  canvasStream.getTracks().forEach((t) => t.stop());
   const mime = (recorder.mimeType || type || 'video/webm').split(';')[0];
   const blob = new Blob(rec.chunks, { type: mime });
   rec.chunks = [];
@@ -654,7 +679,7 @@ function finishRecording(recorder, stream, type) {
   rec.url = URL.createObjectURL(blob);
   ui.clipVideo.src = rec.url;
   ui.clipVideo.play().catch(() => {});
-  ui.clipInfo.textContent = `${ext.toUpperCase()} · ${(blob.size / 1e6).toFixed(1)} MB`;
+  ui.clipInfo.textContent = `${ext.toUpperCase()} · ${(blob.size / 1e6).toFixed(1)} MB${withAudio ? ' · with sound' : ''}`;
   ui.clipShare.hidden = !navigator.canShare?.({ files: [rec.file] });
   ui.clip.hidden = false;
 }
@@ -714,6 +739,15 @@ async function startCamera() {
       audio: false,
     });
     const track = state.stream.getVideoTracks()[0];
+    if (track) {
+      track.addEventListener('ended', () => {
+        dbg('camera track ended');
+        if (state.stream && state.stream.getVideoTracks()[0] === track) {
+          ui.status.textContent = 'The camera stopped. Tap to restart it.';
+          ui.overlay.hidden = false;
+        }
+      });
+    }
     const cam = (track && track.getSettings && track.getSettings()) || {};
     dbg(`getUserMedia ok: ${cam.width}x${cam.height} @ ${cam.frameRate}fps, facing=${cam.facingMode}`);
     clearTimeout(slow);
@@ -815,7 +849,7 @@ const between = (lo, hi) => lo + Math.random() * (hi - lo);
 
 // Pick a random look. Ranges are kept to values that look good and stay
 // fast on phones (detail is capped well below the slider's maximum).
-function randomize() {
+function randomize({ quiet = false, keepDetail = false } = {}) {
   ui.random.classList.remove('spin');
   void ui.random.offsetWidth; // restart the animation
   ui.random.classList.add('spin');
@@ -833,7 +867,7 @@ function randomize() {
   }
 
   ui.style.value = style;
-  ui.cols.value = Math.round(between(32, 110));
+  if (!keepDetail) ui.cols.value = Math.round(between(32, 110));
   ui.contrast.value = between(0.9, 1.8).toFixed(2);
   ui.bright.value = between(-0.08, 0.15).toFixed(2);
   ui.sat.value = between(0.8, 1.8).toFixed(2);
@@ -848,9 +882,124 @@ function randomize() {
 
   const name = style === 'custom' ? ui.custom.value : ui.style.selectedOptions[0].textContent;
   const look = state.kind === 'emoji' ? '' : ` · ${ui.ink.selectedOptions[0].textContent}`;
-  toast(`🎲 ${name}${look}${ui.invert.checked ? ' · inverted' : ''}`);
+  if (!quiet) toast(`🎲 ${name}${look}${ui.invert.checked ? ' · inverted' : ''}`);
   dbg(`randomize: ${style}, ink=${ui.ink.value}, cols=${ui.cols.value}, contrast=${ui.contrast.value}, bright=${ui.bright.value}, sat=${ui.sat.value}, shadows=${ui.shadows.value}, highlights=${ui.highlights.value}, invert=${ui.invert.checked}, match=${ui.match.value}`);
 }
+
+// ---------------------------------------------------------------------------
+// React to sound
+// ---------------------------------------------------------------------------
+
+const sound = {
+  stream: null,
+  ctx: null,
+  analyser: null,
+  buf: null,
+  level: 0, // 0..1, smoothed loudness relative to recent peaks
+  peak: 0.02,
+  avg: 0,
+  lastBeat: 0,
+  lastShuffle: 0,
+};
+
+const soundPulses = () => ui.sound.value === 'pulse' || ui.sound.value === 'both';
+const soundShuffles = () => ui.sound.value === 'shuffle' || ui.sound.value === 'both';
+const pulseAmount = () => (sound.analyser && soundPulses() && sound.level > 0.03 ? sound.level : 0);
+
+async function startMic() {
+  // Create/resume the audio context synchronously inside the user's tap;
+  // iOS only lets audio start from a gesture.
+  const AC = window.AudioContext || window.webkitAudioContext;
+  if (!AC) throw new Error('Web Audio is not supported');
+  sound.ctx = sound.ctx || new AC();
+  sound.ctx.resume?.().catch(() => {});
+  dbg('requesting microphone');
+  // Raw signal: echo cancellation, noise suppression and auto gain would
+  // flatten music and claps.
+  sound.stream = await navigator.mediaDevices.getUserMedia({
+    audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false },
+  });
+  const src = sound.ctx.createMediaStreamSource(sound.stream);
+  sound.analyser = sound.ctx.createAnalyser();
+  sound.analyser.fftSize = 1024;
+  sound.analyser.smoothingTimeConstant = 0;
+  src.connect(sound.analyser); // not connected to the speakers: no feedback
+  sound.buf = new Float32Array(sound.analyser.fftSize);
+  sound.peak = 0.02;
+  sound.avg = 0;
+  dbg(`microphone on, audio context ${sound.ctx.state}, ${sound.ctx.sampleRate} Hz`);
+}
+
+function stopMic() {
+  sound.stream?.getTracks().forEach((t) => t.stop());
+  sound.stream = null;
+  sound.analyser = null;
+  sound.level = 0;
+  ui.meterFill.style.transform = 'scaleX(0)';
+  dbg('microphone off');
+}
+
+async function onSoundModeChange() {
+  const mode = ui.sound.value;
+  ui.meter.hidden = mode === 'off';
+  if (mode === 'off') {
+    stopMic();
+    return;
+  }
+  if (sound.analyser) return;
+  try {
+    await startMic();
+    toast(mode === 'pulse' ? '🎤 Pulsing to sound' : '🎤 Listening for beats');
+  } catch (err) {
+    dbg('microphone failed:', err.name, err.message);
+    ui.sound.value = 'off';
+    ui.meter.hidden = true;
+    toast(err.name === 'NotAllowedError' ? 'Microphone permission was denied' : 'Couldn’t start the microphone');
+  }
+}
+
+// Called every frame: measure loudness, smooth it, and detect beats.
+function updateSound() {
+  if (!sound.analyser) return;
+  if (sound.ctx.state === 'suspended') return; // resumed on the next tap
+  if (sound.analyser.getFloatTimeDomainData) {
+    sound.analyser.getFloatTimeDomainData(sound.buf);
+  } else {
+    const bytes = new Uint8Array(sound.buf.length);
+    sound.analyser.getByteTimeDomainData(bytes);
+    for (let i = 0; i < bytes.length; i++) sound.buf[i] = (bytes[i] - 128) / 128;
+  }
+  let sum = 0;
+  for (let i = 0; i < sound.buf.length; i++) sum += sound.buf[i] * sound.buf[i];
+  const rms = Math.sqrt(sum / sound.buf.length);
+
+  // Adaptive gain: compare against the loudest recent sound, so it works
+  // for a quiet room and a loud party alike. A small floor ignores hiss.
+  sound.peak = Math.max(rms, sound.peak * 0.997, 0.02);
+  const target = Math.min(1, Math.max(0, rms - 0.004) / sound.peak);
+  // Fast attack, slower release.
+  sound.level = target > sound.level ? sound.level + (target - sound.level) * 0.7 : sound.level * 0.86;
+
+  // Beat: a sudden jump well above the recent average loudness.
+  const now = performance.now();
+  const isBeat = rms > sound.avg * 1.8 && rms > 0.03 && now - sound.lastBeat > 250;
+  sound.avg = sound.avg * 0.93 + rms * 0.07;
+  if (isBeat) {
+    sound.lastBeat = now;
+    ui.meter.classList.remove('beat');
+    void ui.meter.offsetWidth;
+    ui.meter.classList.add('beat');
+    if (soundShuffles() && state.stream && !state.paused && now - sound.lastShuffle > 600) {
+      sound.lastShuffle = now;
+      randomize({ quiet: true, keepDetail: true });
+    }
+  }
+  ui.meterFill.style.transform = `scaleX(${sound.level.toFixed(3)})`;
+}
+
+// iOS may leave the audio context suspended until a tap; resume on any tap.
+document.addEventListener('touchend', () => sound.ctx?.state === 'suspended' && sound.ctx.resume(), true);
+document.addEventListener('click', () => sound.ctx?.state === 'suspended' && sound.ctx.resume(), true);
 
 // ---------------------------------------------------------------------------
 // Wiring
@@ -910,7 +1059,8 @@ ui.pause.addEventListener('click', () => {
 });
 ui.snap.addEventListener('click', snapshot);
 ui.copy.addEventListener('click', copyText);
-ui.random.addEventListener('click', randomize);
+ui.random.addEventListener('click', () => randomize());
+ui.sound.addEventListener('change', onSoundModeChange);
 const toggleRecording = () => (rec.recorder ? stopRecording() : startRecording());
 ui.record.addEventListener('click', toggleRecording);
 ui.recordFab.addEventListener('click', toggleRecording);
@@ -935,5 +1085,5 @@ try {
 } catch (err) {
   ui.error.textContent = `Setup failed: ${err.message}`;
 }
-window.emojiFiedReady = '9';
-dbg('app.js v9 initialised');
+window.emojiFiedReady = '10';
+dbg('app.js v10 initialised');

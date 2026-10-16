@@ -16,6 +16,10 @@ No build step, no dependencies, and no video ever leaves your device.
   otherwise they're used as a brightness ramp (automatically sorted by how
   much ink each glyph uses, so order doesn't matter).
 
+**React to sound** (uses the microphone): *Pulse* makes the glyphs swell and
+brighten with loudness, *Shuffle on beats* switches to a random look on each
+beat, or both. While it's on, recorded clips include the audio.
+
 Extras: 🎲 randomize (`D`: random style, ink, detail and tone, sometimes a
 random custom emoji set), detail slider, adjustments (contrast, brightness,
 saturation, shadows, highlights, with reset), invert, mirror, front/back camera
