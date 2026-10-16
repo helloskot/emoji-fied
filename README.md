@@ -17,7 +17,8 @@ No build step, no dependencies, and no video ever leaves your device.
   much ink each glyph uses, so order doesn't matter).
 
 Extras: 🎲 randomize (`D`: random style, ink, detail and tone, sometimes a
-random custom emoji set), detail slider, contrast/brightness, invert, mirror, front/back camera
+random custom emoji set), detail slider, adjustments (contrast, brightness,
+saturation, shadows, highlights, with reset), invert, mirror, front/back camera
 flip, pause (`Space`), PNG snapshot (`S`), **video clips** (`R`, up to 60 s;
 MP4 on Safari, with Save/Share to Photos on iPhone) and **Copy text** to paste
 the frame as plain emoji/unicode text.

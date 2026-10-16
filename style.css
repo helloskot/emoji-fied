@@ -135,6 +135,23 @@ select, input[type="text"] {
 }
 input[type="text"] { font-size: 18px; }
 
+.adjust { border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); padding: 4px 0; }
+.adjust summary {
+  cursor: pointer;
+  padding: 8px 0;
+  font-weight: 600;
+  list-style-position: inside;
+}
+.adjust-body { display: grid; gap: 12px; padding: 4px 0 10px; }
+.reset {
+  justify-self: start;
+  background: none;
+  border: 0;
+  padding: 4px 0;
+  color: var(--accent);
+  font-size: 14px;
+}
+
 .style-row { display: flex; gap: 8px; }
 .style-row select { flex: 1; min-width: 0; }
 .random {
