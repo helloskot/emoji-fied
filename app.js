@@ -97,6 +97,12 @@ const ui = {
   blankField: $('#blankField'),
   flip: $('#flip'),
   flipFab: $('#flipFab'),
+  full: $('#full'),
+  exitFull: $('#exitFull'),
+  airplay: $('#airplay'),
+  tvHint: $('#tvHint'),
+  tvSteps: $('#tvSteps'),
+  tvHintClose: $('#tvHintClose'),
   pause: $('#pause'),
   snap: $('#snap'),
   copy: $('#copy'),
@@ -149,6 +155,7 @@ const luma = (r, g, b) => 0.2126 * r + 0.7152 * g + 0.0722 * b;
 
 let toastTimer;
 function toast(msg) {
+  hostOverlays();
   ui.toast.textContent = msg;
   ui.toast.classList.add('show');
   clearTimeout(toastTimer);
@@ -690,6 +697,7 @@ function finishRecording(recorder, canvasStream, type, withAudio) {
   ui.clipVideo.play().catch(() => {});
   ui.clipInfo.textContent = `${ext.toUpperCase()} · ${(blob.size / 1e6).toFixed(1)} MB${withAudio ? ' · with sound' : ''}`;
   ui.clipShare.hidden = !navigator.canShare?.({ files: [rec.file] });
+  hostOverlays();
   ui.clip.hidden = false;
 }
 
@@ -1144,6 +1152,119 @@ document.addEventListener('touchend', () => sound.ctx?.state === 'suspended' && 
 document.addEventListener('click', () => sound.ctx?.state === 'suspended' && sound.ctx.resume(), true);
 
 // ---------------------------------------------------------------------------
+// Full screen & TV
+// ---------------------------------------------------------------------------
+
+// Native element full screen where supported (iPad, Mac, Android, desktop).
+// iPhone Safari doesn't allow it for anything but <video>, so there we fill
+// the page instead ("immersive"). Installing to the Home Screen removes
+// Safari's toolbars too.
+const fullscreenElement = () => document.fullscreenElement || document.webkitFullscreenElement;
+const nativeFullscreenOK = () =>
+  !!(document.fullscreenEnabled || document.webkitFullscreenEnabled) &&
+  !!(ui.stage.requestFullscreen || ui.stage.webkitRequestFullscreen);
+const isFull = () => !!fullscreenElement() || document.body.classList.contains('immersive');
+
+// In native full screen only the full-screen element is displayed, so the
+// toast and the clip preview move inside it while it's active.
+function hostOverlays() {
+  const host = fullscreenElement() || document.body;
+  for (const el of [ui.clip, ui.toast]) if (el.parentNode !== host) host.appendChild(el);
+}
+
+async function enterFullscreen() {
+  if (isFull()) return;
+  let native = false;
+  if (nativeFullscreenOK()) {
+    try {
+      if (ui.stage.requestFullscreen) await ui.stage.requestFullscreen();
+      else ui.stage.webkitRequestFullscreen();
+      native = true;
+    } catch (err) {
+      dbg('native fullscreen failed:', err.name, err.message);
+    }
+  }
+  if (!native) document.body.classList.add('immersive');
+  dbg(`fullscreen on (${native ? 'native' : 'immersive'})`);
+  onFullscreenChange();
+}
+
+function exitFullscreen() {
+  ui.tvHint.hidden = true;
+  if (fullscreenElement()) (document.exitFullscreen || document.webkitExitFullscreen).call(document);
+  document.body.classList.remove('immersive');
+  onFullscreenChange();
+}
+
+function onFullscreenChange() {
+  hostOverlays();
+  const full = isFull();
+  ui.exitFull.hidden = !full;
+  ui.stage.classList.toggle('is-full', full);
+  if (!full) ui.tvHint.hidden = true;
+  keepAwake(full);
+  if (full) wakeControls();
+}
+
+// Keep the screen on while full screen (e.g. mirrored to a TV).
+let wakeLock = null;
+async function keepAwake(on) {
+  try {
+    if (on && !wakeLock && navigator.wakeLock && document.visibilityState === 'visible') {
+      wakeLock = await navigator.wakeLock.request('screen');
+      wakeLock.addEventListener('release', () => (wakeLock = null));
+      dbg('screen wake lock on');
+    } else if (!on && wakeLock) {
+      await wakeLock.release();
+      wakeLock = null;
+    }
+  } catch (err) {
+    dbg('wake lock failed:', err.name, err.message);
+  }
+}
+
+// In full screen, the on-picture buttons fade out after a few seconds and
+// come back on any touch.
+let idleTimer = 0;
+function wakeControls() {
+  ui.stage.classList.remove('idle');
+  clearTimeout(idleTimer);
+  if (isFull()) idleTimer = setTimeout(() => ui.stage.classList.add('idle'), 3000);
+}
+
+function tvSteps() {
+  const ua = navigator.userAgent;
+  const ios = /iPhone|iPad|iPod/.test(ua) || (/Macintosh/.test(ua) && navigator.maxTouchPoints > 1);
+  const mac = /Macintosh/.test(ua) && !ios;
+  if (ios) {
+    return [
+      'Open <b>Control Center</b>: swipe down from the top-right corner.',
+      'Tap <b>Screen Mirroring</b>.',
+      'Choose your <b>Apple TV</b> or AirPlay TV.',
+      'Turn your phone sideways for a bigger picture.',
+    ];
+  }
+  if (mac) {
+    return [
+      'Click <b>Control Center</b> in the menu bar.',
+      'Click <b>Screen Mirroring</b>.',
+      'Choose your <b>Apple TV</b> or AirPlay TV.',
+    ];
+  }
+  return [
+    'Use your device’s <b>screen casting</b>, e.g. Android Quick Settings → <b>Cast</b>, or Chrome ⋮ → <b>Cast…</b>',
+    'Choose your TV.',
+  ];
+}
+
+async function showOnTv() {
+  await enterFullscreen();
+  ui.tvSteps.innerHTML = tvSteps().map((step) => `<li>${step}</li>`).join('');
+  ui.tvHint.hidden = false;
+  dbg('TV hint shown');
+}
+
+// ---------------------------------------------------------------------------
 // Wiring
 // ---------------------------------------------------------------------------
 
@@ -1194,6 +1315,16 @@ for (const el of [ui.match, ui.ink, ui.mirror, ui.invert, ui.blank]) {
 }
 ui.flip.addEventListener('click', switchCamera);
 ui.flipFab.addEventListener('click', switchCamera);
+ui.full.addEventListener('click', enterFullscreen);
+ui.exitFull.addEventListener('click', exitFullscreen);
+ui.airplay.addEventListener('click', showOnTv);
+ui.tvHintClose.addEventListener('click', () => (ui.tvHint.hidden = true));
+document.addEventListener('fullscreenchange', onFullscreenChange);
+document.addEventListener('webkitfullscreenchange', onFullscreenChange);
+document.addEventListener('visibilitychange', () => isFull() && keepAwake(true));
+for (const ev of ['pointerdown', 'pointermove', 'touchstart']) {
+  ui.stage.addEventListener(ev, wakeControls, { passive: true });
+}
 ui.pause.addEventListener('click', () => {
   state.paused = !state.paused;
   ui.pause.textContent = state.paused ? '▶ Resume' : '⏸ Pause';
@@ -1219,6 +1350,7 @@ document.addEventListener('keydown', (e) => {
   if (e.key === 'd') randomize();
   if (e.key === 'f') switchCamera();
   if (e.key === 'Escape' && !ui.clip.hidden) closeClip();
+  else if (e.key === 'Escape' && document.body.classList.contains('immersive')) exitFullscreen();
 });
 
 syncLabels();
@@ -1228,5 +1360,5 @@ try {
 } catch (err) {
   ui.error.textContent = `Setup failed: ${err.message}`;
 }
-window.emojiFiedReady = '13';
-dbg('app.js v13 initialised');
+window.emojiFiedReady = '14';
+dbg('app.js v14 initialised');

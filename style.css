@@ -86,6 +86,76 @@ main {
 #out { position: relative; z-index: 1; background: #000; }
 .overlay { z-index: 2; }
 
+/* Full screen. Native and iPhone "immersive" modes share the same look;
+   kept as separate rules because an unknown selector drops a whole list. */
+body.immersive { overflow: hidden; }
+body.immersive .stage {
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+  width: 100vw;
+  height: 100vh;
+  height: 100dvh;
+  aspect-ratio: auto !important;
+  border: 0;
+  border-radius: 0;
+}
+.stage:fullscreen {
+  width: 100vw;
+  height: 100vh;
+  aspect-ratio: auto !important;
+  border: 0;
+  border-radius: 0;
+}
+.stage:-webkit-full-screen {
+  width: 100vw;
+  height: 100vh;
+  aspect-ratio: auto !important;
+  border: 0;
+  border-radius: 0;
+}
+
+.exit-full {
+  position: absolute;
+  top: max(12px, env(safe-area-inset-top));
+  right: max(12px, env(safe-area-inset-right));
+  z-index: 4;
+  width: 42px;
+  height: 42px;
+  padding: 0;
+  border-radius: 50%;
+  border: 0;
+  background: rgba(0, 0, 0, 0.5);
+  color: #fff;
+  font-size: 18px;
+  -webkit-tap-highlight-color: transparent;
+}
+.exit-full[hidden] { display: none; }
+.exit-full, .flip-fab { transition: opacity 0.4s; }
+.stage.idle .exit-full,
+.stage.idle .flip-fab { opacity: 0; pointer-events: none; }
+
+.tv-hint {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  z-index: 5;
+  width: min(92%, 420px);
+  max-height: 90%;
+  overflow: auto;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: 16px;
+  box-shadow: 0 8px 40px rgba(0, 0, 0, 0.6);
+}
+.tv-hint[hidden] { display: none; }
+.tv-hint h2 { margin: 0 0 8px; font-size: 18px; }
+.tv-hint ol { margin: 0 0 10px; padding-left: 20px; display: grid; gap: 6px; }
+.tv-note { margin: 0 0 12px; color: var(--muted); font-size: 13px; }
+.tv-hint button { width: 100%; }
+
 .flip-fab {
   position: absolute;
   right: 14px;
@@ -109,6 +179,10 @@ main {
 @keyframes flip-spin { to { transform: rotate(360deg); } }
 @media (max-width: 480px) {
   .flip-fab { width: 42px; height: 42px; bottom: 12px; right: 12px; }
+}
+.stage.is-full .flip-fab {
+  bottom: max(14px, env(safe-area-inset-bottom));
+  right: max(14px, env(safe-area-inset-right));
 }
 
 .overlay {
@@ -257,7 +331,7 @@ button:disabled { opacity: 0.5; cursor: default; }
 .clip {
   position: fixed;
   inset: 0;
-  z-index: 10;
+  z-index: 70;
   display: grid;
   place-items: center;
   padding: 16px;
@@ -287,6 +361,7 @@ button:disabled { opacity: 0.5; cursor: default; }
 
 .toast {
   position: fixed;
+  z-index: 80;
   left: 50%;
   bottom: 24px;
   transform: translate(-50%, 20px);

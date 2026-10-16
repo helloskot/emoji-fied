@@ -4,9 +4,16 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
   <meta name="theme-color" content="#0b0b10" />
+  <!-- Installable: "Add to Home Screen" opens full screen, without Safari's toolbars -->
+  <link rel="manifest" href="manifest.webmanifest" />
+  <meta name="mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <meta name="apple-mobile-web-app-title" content="emoji·fied" />
+  <link rel="apple-touch-icon" href="icons/icon-180.png" />
   <title>Emoji-fied</title>
   <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🤩</text></svg>" />
-  <link rel="stylesheet" href="style.css?v=13" />
+  <link rel="stylesheet" href="style.css?v=14" />
 </head>
 <body>
   <header>
@@ -18,6 +25,15 @@
     <div class="stage" id="stage">
       <canvas id="out" aria-label="Camera rendered as emoji or unicode characters"></canvas>
       <video id="video" playsinline muted autoplay></video>
+
+      <button id="exitFull" class="exit-full" type="button" aria-label="Exit full screen" title="Exit full screen (Esc)" hidden>✕</button>
+
+      <div class="tv-hint" id="tvHint" hidden role="dialog" aria-label="Show on a TV">
+        <h2>📺 Show it on your TV</h2>
+        <ol id="tvSteps"></ol>
+        <p class="tv-note">Web pages can’t AirPlay a live camera effect directly, so mirror the screen instead. The app stays full screen, so the TV shows just the art.</p>
+        <button id="tvHintClose" class="primary" type="button">Got it</button>
+      </div>
 
       <button id="flipFab" class="flip-fab" type="button" aria-label="Switch camera" title="Switch camera (F)" hidden>
         <svg viewBox="0 0 24 24" width="26" height="26" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
@@ -36,7 +52,7 @@
           <button id="start" class="primary">Start camera</button>
           <p class="status" id="status" aria-live="polite"></p>
           <p class="error" id="error" role="alert"></p>
-          <p class="note">Everything runs in your browser. No video leaves your device. <span class="version">v13</span></p>
+          <p class="note">Everything runs in your browser. No video leaves your device. <span class="version">v14</span></p>
         </div>
       </div>
     </div>
@@ -168,6 +184,8 @@
         <button id="pause" title="Freeze the frame">⏸ Pause</button>
         <button id="snap" title="Download a PNG">📸 Snapshot</button>
         <button id="copy" title="Copy the frame as text">📋 Copy text</button>
+        <button id="full" title="Full screen">⛶ Full screen</button>
+        <button id="airplay" title="Show it on a TV with AirPlay">📺 AirPlay</button>
       </div>
     </section>
   </main>
@@ -239,7 +257,7 @@
             function () { var r = document.createRange(); r.selectNodeContents(pre); var s = getSelection(); s.removeAllRanges(); s.addRange(r); }
           );
         });
-        dbg('page v13', navigator.userAgent);
+        dbg('page v14', navigator.userAgent);
         dbg('secure=' + window.isSecureContext, 'mediaDevices=' + !!navigator.mediaDevices,
             'getUserMedia=' + !!(navigator.mediaDevices && navigator.mediaDevices.getUserMedia));
         if (navigator.permissions && navigator.permissions.query) {
@@ -260,10 +278,10 @@
       window.addEventListener('unhandledrejection', function (e) { dbg('REJECTION', String(e.reason)); show((e.reason && e.reason.message) || String(e.reason)); });
       window.addEventListener('load', function () {
         dbg('load event, app ready = ' + window.emojiFiedReady);
-        if (window.emojiFiedReady !== '13') show('an old or broken copy of the app loaded. Close this tab and open the link again.');
+        if (window.emojiFiedReady !== '14') show('an old or broken copy of the app loaded. Close this tab and open the link again.');
       });
     })();
   </script>
-  <script src="app.js?v=13"></script>
+  <script src="app.js?v=14"></script>
 </body>
 </html>
