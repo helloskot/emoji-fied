@@ -92,6 +92,8 @@ const ui = {
   snap: $('#snap'),
   copy: $('#copy'),
   record: $('#record'),
+  recordFab: $('#recordFab'),
+  recordFabTime: $('#recordFabTime'),
   clip: $('#clip'),
   clipVideo: $('#clipVideo'),
   clipInfo: $('#clipInfo'),
@@ -518,6 +520,9 @@ let frames = 0;
 let fpsT = performance.now();
 
 function loop() {
+  // Show the on-camera record button only while the live view is up.
+  const showFab = !!state.stream && ui.overlay.hidden;
+  if (ui.recordFab.hidden === showFab) ui.recordFab.hidden = !showFab;
   if (rec.recorder) copyFrameToRecording();
   if (!state.paused && video.readyState >= 2) {
     render();
@@ -602,7 +607,6 @@ function startRecording() {
   rec.recorder = recorder;
   rec.started = performance.now();
   rec.timer = setInterval(updateRecordButton, 250);
-  ui.record.classList.add('recording');
   updateRecordButton();
   dbg(`recording started: ${rec.canvas.width}x${rec.canvas.height}, type=${recorder.mimeType || type || 'default'}`);
 }
@@ -612,13 +616,23 @@ function stopRecording() {
   clearInterval(rec.timer);
   if (rec.recorder.state !== 'inactive') rec.recorder.stop();
   rec.recorder = null;
-  ui.record.classList.remove('recording');
-  ui.record.textContent = '⏺ Record';
+  setRecordUI(null);
+}
+
+// Keep both record buttons (the one in the controls and the one over the
+// camera view) in sync. `time` is null when not recording.
+function setRecordUI(time) {
+  const recording = time !== null;
+  ui.record.classList.toggle('recording', recording);
+  ui.record.textContent = recording ? `⏹ Stop ${time}` : '⏺ Record';
+  ui.recordFab.classList.toggle('recording', recording);
+  ui.recordFab.setAttribute('aria-label', recording ? 'Stop recording' : 'Start recording');
+  ui.recordFabTime.textContent = recording ? time : '';
 }
 
 function updateRecordButton() {
   const secs = Math.floor((performance.now() - rec.started) / 1000);
-  ui.record.textContent = `⏹ Stop ${Math.floor(secs / 60)}:${String(secs % 60).padStart(2, '0')}`;
+  setRecordUI(`${Math.floor(secs / 60)}:${String(secs % 60).padStart(2, '0')}`);
   if (secs >= MAX_CLIP_SECONDS) {
     stopRecording();
     toast(`Clips are limited to ${MAX_CLIP_SECONDS} seconds`);
@@ -897,7 +911,9 @@ ui.pause.addEventListener('click', () => {
 ui.snap.addEventListener('click', snapshot);
 ui.copy.addEventListener('click', copyText);
 ui.random.addEventListener('click', randomize);
-ui.record.addEventListener('click', () => (rec.recorder ? stopRecording() : startRecording()));
+const toggleRecording = () => (rec.recorder ? stopRecording() : startRecording());
+ui.record.addEventListener('click', toggleRecording);
+ui.recordFab.addEventListener('click', toggleRecording);
 ui.clipShare.addEventListener('click', shareClip);
 ui.clipDownload.addEventListener('click', downloadClip);
 ui.clipDiscard.addEventListener('click', closeClip);
@@ -919,5 +935,5 @@ try {
 } catch (err) {
   ui.error.textContent = `Setup failed: ${err.message}`;
 }
-window.emojiFiedReady = '8';
-dbg('app.js v8 initialised');
+window.emojiFiedReady = '9';
+dbg('app.js v9 initialised');
