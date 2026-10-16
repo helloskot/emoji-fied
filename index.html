@@ -6,7 +6,7 @@
   <meta name="theme-color" content="#0b0b10" />
   <title>Emoji-fied</title>
   <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🤩</text></svg>" />
-  <link rel="stylesheet" href="style.css?v=5" />
+  <link rel="stylesheet" href="style.css?v=6" />
 </head>
 <body>
   <header>
@@ -26,7 +26,7 @@
           <button id="start" class="primary">Start camera</button>
           <p class="status" id="status" aria-live="polite"></p>
           <p class="error" id="error" role="alert"></p>
-          <p class="note">Everything runs in your browser. No video leaves your device. <span class="version">v5</span></p>
+          <p class="note">Everything runs in your browser. No video leaves your device. <span class="version">v6</span></p>
         </div>
       </div>
     </div>
@@ -107,6 +107,7 @@
       </div>
 
       <div class="buttons">
+        <button id="record" class="record" title="Record a video clip (R)">⏺ Record</button>
         <button id="flip" title="Switch between front and back camera">🔄 Flip</button>
         <button id="pause" title="Freeze the frame">⏸ Pause</button>
         <button id="snap" title="Download a PNG">📸 Snapshot</button>
@@ -114,6 +115,18 @@
       </div>
     </section>
   </main>
+
+  <div class="clip" id="clip" hidden>
+    <div class="clip-card" role="dialog" aria-label="Recorded clip">
+      <video id="clipVideo" playsinline loop muted autoplay controls></video>
+      <p class="clip-info" id="clipInfo"></p>
+      <div class="clip-actions">
+        <button id="clipShare" class="primary">Save / Share</button>
+        <button id="clipDownload">Download</button>
+        <button id="clipDiscard">Discard</button>
+      </div>
+    </div>
+  </div>
 
   <div class="toast" id="toast" role="status"></div>
 
@@ -170,7 +183,7 @@
             function () { var r = document.createRange(); r.selectNodeContents(pre); var s = getSelection(); s.removeAllRanges(); s.addRange(r); }
           );
         });
-        dbg('page v5', navigator.userAgent);
+        dbg('page v6', navigator.userAgent);
         dbg('secure=' + window.isSecureContext, 'mediaDevices=' + !!navigator.mediaDevices,
             'getUserMedia=' + !!(navigator.mediaDevices && navigator.mediaDevices.getUserMedia));
         if (navigator.permissions && navigator.permissions.query) {
@@ -191,10 +204,10 @@
       window.addEventListener('unhandledrejection', function (e) { dbg('REJECTION', String(e.reason)); show((e.reason && e.reason.message) || String(e.reason)); });
       window.addEventListener('load', function () {
         dbg('load event, app ready = ' + window.emojiFiedReady);
-        if (window.emojiFiedReady !== '5') show('an old or broken copy of the app loaded. Close this tab and open the link again.');
+        if (window.emojiFiedReady !== '6') show('an old or broken copy of the app loaded. Close this tab and open the link again.');
       });
     })();
   </script>
-  <script src="app.js?v=5"></script>
+  <script src="app.js?v=6"></script>
 </body>
 </html>
