@@ -63,6 +63,7 @@ const ui = {
   error: $('#error'),
   status: $('#status'),
   style: $('#style'),
+  random: $('#random'),
   custom: $('#custom'),
   customField: $('#customField'),
   cols: $('#cols'),
@@ -75,6 +76,13 @@ const ui = {
   contrastOut: $('#contrastOut'),
   bright: $('#bright'),
   brightOut: $('#brightOut'),
+  sat: $('#sat'),
+  satOut: $('#satOut'),
+  shadows: $('#shadows'),
+  shadowsOut: $('#shadowsOut'),
+  highlights: $('#highlights'),
+  highlightsOut: $('#highlightsOut'),
+  resetAdjust: $('#resetAdjust'),
   mirror: $('#mirror'),
   invert: $('#invert'),
   blank: $('#blank'),
@@ -124,6 +132,10 @@ const EMOJI_RE = (() => {
 })();
 
 const clamp255 = (v) => (v < 0 ? 0 : v > 255 ? 255 : v);
+const smoothstep = (a, b, x) => {
+  const t = Math.min(1, Math.max(0, (x - a) / (b - a)));
+  return t * t * (3 - 2 * t);
+};
 const luma = (r, g, b) => 0.2126 * r + 0.7152 * g + 0.0722 * b;
 
 let toastTimer;
@@ -367,19 +379,40 @@ function grabFrame() {
   sctx.drawImage(video, 0, 0, sw, sh);
   sctx.restore();
 
-  // Apply contrast / brightness / invert in place so the full-color
-  // tint pass below sees the same adjusted colors.
+  // Apply the adjustments in place so the full-color tint pass below sees
+  // the same adjusted colors. This runs on the small sample canvas (one
+  // pixel per cell), so it's cheap.
   const img = sctx.getImageData(0, 0, sw, sh);
   const d = img.data;
   const c = +ui.contrast.value;
   const br = +ui.bright.value * 255;
+  const sat = +ui.sat.value;
+  const shd = +ui.shadows.value;
+  const hil = +ui.highlights.value;
+  const tone = shd !== 0 || hil !== 0;
   const inv = ui.invert.checked;
   for (let p = 0; p < d.length; p += 4) {
-    for (let k = 0; k < 3; k++) {
-      let v = (d[p + k] - 128) * c + 128 + br;
-      if (inv) v = 255 - v;
-      d[p + k] = clamp255(v);
+    let r = d[p], g = d[p + 1], b = d[p + 2];
+    // Shadows / highlights: lift or lower tones, fading out smoothly so
+    // shadows barely touch the bright end and highlights the dark end.
+    if (tone) {
+      const l = luma(r, g, b) / 255;
+      const lift = 127.5 * (shd * (1 - smoothstep(0, 0.7, l)) + hil * smoothstep(0.3, 1, l));
+      r += lift; g += lift; b += lift;
     }
+    r = (r - 128) * c + 128 + br;
+    g = (g - 128) * c + 128 + br;
+    b = (b - 128) * c + 128 + br;
+    if (sat !== 1) {
+      const y = luma(r, g, b);
+      r = y + (r - y) * sat;
+      g = y + (g - y) * sat;
+      b = y + (b - y) * sat;
+    }
+    if (inv) { r = 255 - r; g = 255 - g; b = 255 - b; }
+    d[p] = clamp255(r);
+    d[p + 1] = clamp255(g);
+    d[p + 2] = clamp255(b);
   }
   sctx.putImageData(img, 0, 0);
   return d;
@@ -760,13 +793,73 @@ async function copyText() {
 }
 
 // ---------------------------------------------------------------------------
+// Randomize
+// ---------------------------------------------------------------------------
+
+const pick = (arr) => arr[Math.floor(Math.random() * arr.length)];
+const between = (lo, hi) => lo + Math.random() * (hi - lo);
+
+// Pick a random look. Ranges are kept to values that look good and stay
+// fast on phones (detail is capped well below the slider's maximum).
+function randomize() {
+  ui.random.classList.remove('spin');
+  void ui.random.offsetWidth; // restart the animation
+  ui.random.classList.add('spin');
+  const styles = [...ui.style.options].map((o) => o.value).filter((v) => v !== 'custom');
+  let style;
+  if (Math.random() < 0.2) {
+    // Occasionally invent a custom emoji set.
+    const pool = graphemes(EMOJI_SETS.everything).filter((g) => g.trim());
+    const n = 4 + Math.floor(Math.random() * 5);
+    ui.custom.value = Array.from({ length: n }, () => pick(pool)).join('');
+    style = 'custom';
+  } else {
+    do style = pick(styles);
+    while (style === ui.style.value && styles.length > 1);
+  }
+
+  ui.style.value = style;
+  ui.cols.value = Math.round(between(32, 110));
+  ui.contrast.value = between(0.9, 1.8).toFixed(2);
+  ui.bright.value = between(-0.08, 0.15).toFixed(2);
+  ui.sat.value = between(0.8, 1.8).toFixed(2);
+  ui.shadows.value = between(-0.2, 0.4).toFixed(2);
+  ui.highlights.value = between(-0.4, 0.2).toFixed(2);
+  ui.invert.checked = Math.random() < 0.15;
+  ui.ink.value = pick([...ui.ink.options].map((o) => o.value));
+  applyStyle(); // also resets "Match by" to the set's default
+  if (state.kind === 'emoji' && style !== 'emoji:faces' && Math.random() < 0.3) ui.match.value = 'brightness';
+  syncLabels();
+  if (state.paused) render();
+
+  const name = style === 'custom' ? ui.custom.value : ui.style.selectedOptions[0].textContent;
+  const look = state.kind === 'emoji' ? '' : ` · ${ui.ink.selectedOptions[0].textContent}`;
+  toast(`🎲 ${name}${look}${ui.invert.checked ? ' · inverted' : ''}`);
+  dbg(`randomize: ${style}, ink=${ui.ink.value}, cols=${ui.cols.value}, contrast=${ui.contrast.value}, bright=${ui.bright.value}, sat=${ui.sat.value}, shadows=${ui.shadows.value}, highlights=${ui.highlights.value}, invert=${ui.invert.checked}, match=${ui.match.value}`);
+}
+
+// ---------------------------------------------------------------------------
 // Wiring
 // ---------------------------------------------------------------------------
 
+const signed = (v) => (v > 0 ? '+' : '') + v.toFixed(2);
+const ADJUSTMENTS = [
+  [ui.contrast, ui.contrastOut, (v) => v.toFixed(2)],
+  [ui.bright, ui.brightOut, signed],
+  [ui.sat, ui.satOut, (v) => v.toFixed(2)],
+  [ui.shadows, ui.shadowsOut, signed],
+  [ui.highlights, ui.highlightsOut, signed],
+];
+
 function syncLabels() {
-  ui.contrastOut.textContent = (+ui.contrast.value).toFixed(2);
-  const b = +ui.bright.value;
-  ui.brightOut.textContent = (b > 0 ? '+' : '') + b.toFixed(2);
+  for (const [input, output, fmt] of ADJUSTMENTS) output.textContent = fmt(+input.value);
+}
+
+function resetAdjustments() {
+  for (const [input] of ADJUSTMENTS) input.value = input.defaultValue;
+  ui.invert.checked = false;
+  syncLabels();
+  if (state.paused) render();
 }
 
 for (const ev of ['loadedmetadata', 'playing', 'pause', 'stalled', 'error']) {
@@ -785,8 +878,10 @@ ui.custom.addEventListener('input', () => {
   ui.custom._t = setTimeout(applyStyle, 250);
 });
 ui.cols.addEventListener('input', layout);
-ui.contrast.addEventListener('input', () => { syncLabels(); if (state.paused) render(); });
-ui.bright.addEventListener('input', () => { syncLabels(); if (state.paused) render(); });
+for (const [input] of ADJUSTMENTS) {
+  input.addEventListener('input', () => { syncLabels(); if (state.paused) render(); });
+}
+ui.resetAdjust.addEventListener('click', resetAdjustments);
 for (const el of [ui.match, ui.ink, ui.mirror, ui.invert, ui.blank]) {
   el.addEventListener('change', () => state.paused && render());
 }
@@ -801,6 +896,7 @@ ui.pause.addEventListener('click', () => {
 });
 ui.snap.addEventListener('click', snapshot);
 ui.copy.addEventListener('click', copyText);
+ui.random.addEventListener('click', randomize);
 ui.record.addEventListener('click', () => (rec.recorder ? stopRecording() : startRecording()));
 ui.clipShare.addEventListener('click', shareClip);
 ui.clipDownload.addEventListener('click', downloadClip);
@@ -812,6 +908,7 @@ document.addEventListener('keydown', (e) => {
   if (e.key === ' ') { e.preventDefault(); ui.pause.click(); }
   if (e.key === 's') snapshot();
   if (e.key === 'r') ui.record.click();
+  if (e.key === 'd') randomize();
   if (e.key === 'Escape' && !ui.clip.hidden) closeClip();
 });
 
@@ -822,5 +919,5 @@ try {
 } catch (err) {
   ui.error.textContent = `Setup failed: ${err.message}`;
 }
-window.emojiFiedReady = '6';
-dbg('app.js v6 initialised');
+window.emojiFiedReady = '8';
+dbg('app.js v8 initialised');
