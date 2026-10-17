@@ -65,6 +65,10 @@ const ui = {
   sourceButtons: [...document.querySelectorAll('[data-source]')],
   fileInput: $('#fileInput'),
   photoPanel: $('#photoPanel'),
+  photoTab: $('#photoTab'),
+  soundDot: $('#soundDot'),
+  tabButtons: [...document.querySelectorAll('[data-tab]')],
+  tabPanels: [...document.querySelectorAll('[data-panel]')],
   kenBurns: $('#kenBurns'),
   tilt: $('#tilt'),
   tiltOpts: $('#tiltOpts'),
@@ -185,6 +189,12 @@ const smoothstep = (a, b, x) => {
 };
 const luma = (r, g, b) => 0.2126 * r + 0.7152 * g + 0.0722 * b;
 
+// Toolbar buttons hold an icon and a short label.
+function setTool(btn, ico, lbl) {
+  btn.querySelector('.ico').textContent = ico;
+  btn.querySelector('.lbl').textContent = lbl;
+}
+
 let toastTimer;
 function toast(msg) {
   hostOverlays();
@@ -263,6 +273,29 @@ function buildTextPalette(chars) {
   const glyphs = [...new Set(graphemes(chars))];
   const pal = buildAtlas(glyphs, { emoji: false, cw: 30, ch: 50 });
   pal.entries.sort((x, y) => x.density - y.density);
+  return pal;
+}
+
+// Skulls: one 💀 drawn at a range of sizes (the first is empty). Brighter
+// cells get bigger skulls; the renderer tints them by multiplying, so each
+// skull keeps its own eye sockets and teeth.
+const SKULL_SIZES = [0, 0.36, 0.48, 0.6, 0.72, 0.86, 1];
+function buildSkullPalette() {
+  const pal = buildAtlas(SKULL_SIZES.map((_, i) => `skull${i}`), {
+    emoji: true,
+    cw: 48,
+    ch: 48,
+    draw(a, glyph, sx, sy) {
+      const size = SKULL_SIZES[+glyph.slice(5)];
+      if (!size) return;
+      a.save();
+      a.font = `${Math.round(48 * 0.84 * size)}px ${EMOJI_FONT}`;
+      a.fillText('💀', sx + 24, sy + 24 + 2 * size);
+      a.restore();
+    },
+  });
+  for (const e of pal.entries) e.glyph = e.density > 0 ? '💀' : ' '; // for "Copy text"
+  pal.multiply = true;
   return pal;
 }
 
@@ -361,6 +394,9 @@ function applyStyle() {
   if (v === 'braille') {
     state.kind = 'braille';
     state.palette = getPalette('braille', buildBraillePalette);
+  } else if (v === 'skull') {
+    state.kind = 'skull';
+    state.palette = getPalette('skull', buildSkullPalette);
   } else if (v.startsWith('text:')) {
     state.kind = 'text';
     const name = v.slice(5);
@@ -391,13 +427,16 @@ function applyStyle() {
   layout();
 }
 
+// Emoji and skulls use square cells; text and braille use tall ones.
+const squareCells = () => state.kind === 'emoji' || state.kind === 'skull';
+
 function layout() {
   state.cols = +ui.cols.value;
   ui.colsOut.textContent = `${state.cols} cols`;
 
   const [vw, vh] = frameSize();
   const aspect =
-    state.kind === 'emoji' ? 1 : state.kind === 'braille' ? BRAILLE_ASPECT : TEXT_ASPECT;
+    squareCells() ? 1 : state.kind === 'braille' ? BRAILLE_ASPECT : TEXT_ASPECT;
 
   const outW = vw >= vh ? OUTPUT_LONG_SIDE : Math.round((OUTPUT_LONG_SIDE * vw) / vh);
   state.cellW = outW / state.cols;
@@ -564,6 +603,8 @@ function renderEmoji(j) {
   }
 }
 
+const glyphMask = document.createElement('canvas'); // scratch for multiply-tinted glyphs
+
 function renderText(j) {
   const pal = state.palette;
   const { c, layer: lay, lc, sample: samp, d, cols, rows, cellW, cellH, grid, fx, photo } = j;
@@ -603,17 +644,39 @@ function renderText(j) {
     }
   }
 
-  // Tint the white glyph mask.
-  lc.globalCompositeOperation = 'source-in';
   const ink = ui.ink.value;
-  if (ink === 'full') {
-    lc.imageSmoothingEnabled = false;
-    lc.filter = 'saturate(1.3) brightness(1.25)';
-    lc.drawImage(samp, 0, 0, lay.width, lay.height);
-    lc.filter = 'none';
+  const paint = () => {
+    if (ink === 'full') {
+      lc.imageSmoothingEnabled = false;
+      lc.filter = 'saturate(1.3) brightness(1.25)';
+      lc.drawImage(samp, 0, 0, lay.width, lay.height);
+      lc.filter = 'none';
+    } else {
+      lc.fillStyle = ink;
+      lc.fillRect(0, 0, lay.width, lay.height);
+    }
+  };
+  if (pal.multiply) {
+    // Coloured glyphs (skulls): multiply by the colour so their own shading
+    // stays, then trim back to the glyph shapes.
+    if (glyphMask.width !== lay.width || glyphMask.height !== lay.height) {
+      glyphMask.width = lay.width;
+      glyphMask.height = lay.height;
+    }
+    const mc = glyphMask.getContext('2d');
+    mc.clearRect(0, 0, lay.width, lay.height);
+    mc.drawImage(lay, 0, 0);
+    lc.globalCompositeOperation = 'multiply';
+    paint();
+    lc.save();
+    lc.setTransform(1, 0, 0, 1, 0, 0);
+    lc.globalCompositeOperation = 'destination-in';
+    lc.drawImage(glyphMask, 0, 0);
+    lc.restore();
   } else {
-    lc.fillStyle = ink;
-    lc.fillRect(0, 0, lay.width, lay.height);
+    // Tint the white glyph mask.
+    lc.globalCompositeOperation = 'source-in';
+    paint();
   }
   if (fx) lc.setTransform(1, 0, 0, 1, 0, 0);
   c.drawImage(lay, 0, 0);
@@ -743,7 +806,7 @@ function stopRecording() {
 function setRecordUI(time) {
   const recording = time !== null;
   ui.record.classList.toggle('recording', recording);
-  ui.record.textContent = recording ? `⏹ Stop ${time}` : '⏺ Record';
+  setTool(ui.record, recording ? '⏹' : '⏺', recording ? time : 'Record');
 }
 
 function updateRecordButton() {
@@ -1302,7 +1365,7 @@ async function makePoster() {
     const crop = [(W - cw) / 2, (H - ch) / 2, cw, ch];
 
     const cols = +ui.posterCols.value;
-    const aspect = state.kind === 'emoji' ? 1 : state.kind === 'braille' ? BRAILLE_ASPECT : TEXT_ASPECT;
+    const aspect = squareCells() ? 1 : state.kind === 'braille' ? BRAILLE_ASPECT : TEXT_ASPECT;
     const cellW = pw / cols;
     const rows = Math.max(1, Math.round(ph / (cellW / aspect)));
     const cellH = ph / rows;
@@ -1387,7 +1450,9 @@ function stopCurrentSource() {
 function updateSourceUI() {
   for (const b of ui.sourceButtons) b.setAttribute('aria-pressed', String(b.dataset.source === state.source));
   ui.flip.disabled = state.source !== 'camera';
-  ui.photoPanel.hidden = !isPhotoSource();
+  // The Photo tab only exists for photos and GIFs.
+  ui.photoTab.hidden = !isPhotoSource();
+  if (!isPhotoSource() && currentTab === 'photo') setTab('look');
   // Head tracking uses the camera, so it ends when the source changes.
   if (!isPhotoSource() && (head.on || ui.headTrack.checked)) {
     ui.headTrack.checked = false;
@@ -1495,6 +1560,7 @@ async function playImage(file, isGif) {
   layout();
   connectSoundInput().catch((err) => dbg('sound input failed:', err.name, err.message));
   startAssemble();
+  setTab('photo'); // show what you can do with it
   toast(decoded ? `🎞 ${file.name} · ${decoded.frames.length} frames` : `🖼 ${file.name}`);
 }
 
@@ -1993,6 +2059,7 @@ async function onSoundModeChange() {
   const mode = ui.sound.value;
   ui.meter.hidden = mode === 'off';
   ui.soundOpts.hidden = mode === 'off';
+  ui.soundDot.hidden = mode === 'off'; // a dot on the Sound tab while it's on
   if (mode === 'off') {
     stopMic();
     return;
@@ -2267,6 +2334,23 @@ async function showOnTv() {
 }
 
 // ---------------------------------------------------------------------------
+// Tabs: Look / Sound / Photo, one open at a time (the choice is remembered)
+// ---------------------------------------------------------------------------
+
+let currentTab = 'look';
+
+function setTab(name) {
+  if (name === 'photo' && !isPhotoSource()) name = 'look';
+  currentTab = name;
+  for (const b of ui.tabButtons) b.setAttribute('aria-selected', String(b.dataset.tab === name));
+  for (const p of ui.tabPanels) p.hidden = p.dataset.panel !== name;
+  try { localStorage.setItem('emojiFiedTab', name); } catch {}
+}
+
+for (const b of ui.tabButtons) b.addEventListener('click', () => setTab(b.dataset.tab));
+try { setTab(localStorage.getItem('emojiFiedTab') || 'look'); } catch { setTab('look'); }
+
+// ---------------------------------------------------------------------------
 // Wiring
 // ---------------------------------------------------------------------------
 
@@ -2353,7 +2437,7 @@ for (const ev of ['pointerdown', 'pointermove', 'touchstart']) {
 }
 ui.pause.addEventListener('click', () => {
   state.paused = !state.paused;
-  ui.pause.textContent = state.paused ? '▶ Resume' : '⏸ Pause';
+  setTool(ui.pause, state.paused ? '▶' : '⏸', state.paused ? 'Resume' : 'Pause');
   if (state.source === 'file' && state.fileKind === 'video') state.paused ? video.pause() : video.play().catch(() => {});
 });
 for (const b of ui.sourceButtons) {
@@ -2462,5 +2546,5 @@ try {
 } catch (err) {
   ui.error.textContent = `Setup failed: ${err.message}`;
 }
-window.emojiFiedReady = '22';
-dbg('app.js v22 initialised');
+window.emojiFiedReady = '24';
+dbg('app.js v24 initialised');

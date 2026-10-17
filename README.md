@@ -28,6 +28,9 @@ the stream. Sharing the tab gets the same result.
 ## Styles
 
 - **Emoji**: Everything, Rainbow, Faces, Food, Nature, Animals, Hearts.
+- **Skulls 💀**: every cell is a skull, bigger where the picture is brighter,
+  tinted with the picture's colours (or one ink colour) while keeping its eyes
+  and teeth.
   Each camera cell is replaced by the emoji whose average color is closest
   (or whose brightness matches, under *Match by → Brightness*).
 - **Unicode**: ASCII, detailed ASCII, Blocks `░▒▓█`, Shapes `·○◎●`,

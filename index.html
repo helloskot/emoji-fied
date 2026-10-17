@@ -13,7 +13,7 @@
   <link rel="apple-touch-icon" href="icons/icon-180.png" />
   <title>Emoji-fied</title>
   <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🤩</text></svg>" />
-  <link rel="stylesheet" href="style.css?v=22" />
+  <link rel="stylesheet" href="style.css?v=24" />
 </head>
 <body>
   <header>
@@ -56,12 +56,22 @@
           </div>
           <p class="status" id="status" aria-live="polite"></p>
           <p class="error" id="error" role="alert"></p>
-          <p class="note">Everything runs in your browser. No video leaves your device. <span class="version">v22</span></p>
+          <p class="note">Everything runs in your browser. No video leaves your device. <span class="version">v24</span></p>
         </div>
       </div>
     </div>
 
     <section class="controls" aria-label="Filter controls">
+      <div class="toolbar" role="toolbar" aria-label="Actions">
+        <button id="record" class="tool record" type="button" title="Record a video clip (R)"><span class="ico">⏺</span><span class="lbl">Record</span></button>
+        <button id="snap" class="tool" type="button" title="Save a snapshot (S)"><span class="ico">📸</span><span class="lbl">Photo</span></button>
+        <button id="pause" class="tool" type="button" title="Freeze the frame (Space)"><span class="ico">⏸</span><span class="lbl">Pause</span></button>
+        <button id="flip" class="tool" type="button" title="Switch between front and back camera (F)"><span class="ico">🔄</span><span class="lbl">Flip</span></button>
+        <button id="full" class="tool" type="button" title="Full screen"><span class="ico">⛶</span><span class="lbl">Full</span></button>
+        <button id="airplay" class="tool" type="button" title="Open the live picture in the native player, for AirPlay, Picture in Picture and full screen"><span class="ico">📺</span><span class="lbl">AirPlay</span></button>
+        <button id="copy" class="tool" type="button" title="Copy the frame as text"><span class="ico">📋</span><span class="lbl">Text</span></button>
+      </div>
+
       <div class="field">
         <span class="field-label">Source</span>
         <div class="seg" role="group" aria-label="Video source">
@@ -70,33 +80,6 @@
           <button type="button" data-source="screen" aria-pressed="false">🖥 Screen</button>
         </div>
         <input id="fileInput" type="file" accept="video/*,image/*" hidden />
-      </div>
-
-      <div class="photo-panel" id="photoPanel" hidden>
-        <span class="field-label">Photo effects</span>
-        <div class="toggles">
-          <label><input id="kenBurns" type="checkbox" checked /> 🎥 Pan &amp; zoom</label>
-          <label><input id="tilt" type="checkbox" /> 📱 Tilt to move</label>
-          <label><input id="twinkle" type="checkbox" /> ✨ Twinkle</label>
-        </div>
-        <div class="tilt-opts" id="tiltOpts" hidden>
-          <label><input id="headTrack" type="checkbox" /> 🙂 Head tracking (webcam)</label>
-          <span class="hint">On a computer, the mouse and the arrow keys tilt it too.</span>
-        </div>
-        <button id="assemble" type="button">🧩 Assemble again</button>
-        <div class="poster-box">
-          <span class="field-label">Poster: a sharp, high-detail picture to save</span>
-          <select id="posterSize" aria-label="Poster size">
-            <option value="4k">4K (3840 px)</option>
-            <option value="wallpaper">Phone wallpaper (1290×2796)</option>
-            <option value="square">Square (2048 px)</option>
-          </select>
-          <label class="field">
-            <span>Poster detail <output id="posterColsOut"></output></span>
-            <input id="posterCols" type="range" min="80" max="400" value="180" />
-          </label>
-          <button id="makePoster" type="button" class="primary">🖼 Make poster</button>
-        </div>
       </div>
 
       <div class="field">
@@ -111,6 +94,7 @@
             <option value="emoji:nature">Nature</option>
             <option value="emoji:animals">Animals</option>
             <option value="emoji:hearts">Hearts</option>
+            <option value="skull">Skulls 💀</option>
           </optgroup>
           <optgroup label="Unicode">
             <option value="text:ascii">ASCII</option>
@@ -135,12 +119,69 @@
         <input id="custom" type="text" value="🐸🍀💚🌿🟩" autocomplete="off" spellcheck="false" />
       </label>
 
-      <label class="field">
+      <label class="field range">
         <span>Detail <output id="colsOut"></output></span>
         <input id="cols" type="range" min="16" max="180" value="64" />
       </label>
 
-      <div class="field">
+      <div class="tabs" role="tablist" aria-label="Settings">
+        <button type="button" role="tab" data-tab="look" aria-selected="true">🎨 Look</button>
+        <button type="button" role="tab" data-tab="sound" aria-selected="false">🎤 Sound<span class="tab-dot" id="soundDot" hidden></span></button>
+        <button type="button" role="tab" data-tab="photo" aria-selected="false" id="photoTab" hidden>🖼 Photo</button>
+      </div>
+
+      <div class="tab-panel" data-panel="look" role="tabpanel">
+      <label class="field" id="matchField">
+        <span>Match by</span>
+        <select id="match">
+          <option value="color">Color</option>
+          <option value="brightness">Brightness</option>
+        </select>
+      </label>
+      <label class="field" id="colorField" hidden>
+        <span>Ink</span>
+        <select id="ink">
+          <option value="full">Full color</option>
+          <option value="#39ff7a">Matrix green</option>
+          <option value="#f2f2f2">White</option>
+          <option value="#ffb000">Amber</option>
+          <option value="#5ec8ff">Cyan</option>
+          <option value="#ff4fd8">Magenta</option>
+        </select>
+      </label>
+        <div class="adjust-head">
+          <span class="field-label">Adjustments</span>
+          <button id="resetAdjust" type="button" class="reset">Reset</button>
+        </div>
+          <label class="field range">
+            <span>Contrast <output id="contrastOut"></output></span>
+            <input id="contrast" type="range" min="0.5" max="3" step="0.05" value="1.2" />
+          </label>
+          <label class="field range">
+            <span>Brightness <output id="brightOut"></output></span>
+            <input id="bright" type="range" min="-0.5" max="0.5" step="0.01" value="0" />
+          </label>
+          <label class="field range">
+            <span>Saturation <output id="satOut"></output></span>
+            <input id="sat" type="range" min="0" max="3" step="0.05" value="1" />
+          </label>
+          <label class="field range">
+            <span>Shadows <output id="shadowsOut"></output></span>
+            <input id="shadows" type="range" min="-1" max="1" step="0.02" value="0" />
+          </label>
+          <label class="field range">
+            <span>Highlights <output id="highlightsOut"></output></span>
+            <input id="highlights" type="range" min="-1" max="1" step="0.02" value="0" />
+          </label>
+      <div class="toggles">
+        <label><input id="mirror" type="checkbox" checked /> Mirror</label>
+        <label><input id="invert" type="checkbox" /> Invert</label>
+        <label id="blankField"><input id="blank" type="checkbox" checked /> Blank darks</label>
+      </div>
+      </div>
+
+      <div class="tab-panel" data-panel="sound" role="tabpanel" hidden>
+        <div class="field">
         <label for="sound">🎤 React to sound</label>
         <select id="sound">
           <option value="off">Off</option>
@@ -150,11 +191,11 @@
         </select>
         <div class="meter" id="meter" hidden aria-hidden="true"><div class="meter-fill" id="meterFill"></div></div>
         <div class="sound-opts" id="soundOpts" hidden>
-          <label class="field">
+          <label class="field range">
             <span>Sensitivity <output id="sensOut"></output></span>
             <input id="sens" type="range" min="0.5" max="4" step="0.1" value="2" />
           </label>
-          <label class="field">
+          <label class="field range">
             <span>Effect strength <output id="fxOut"></output></span>
             <input id="fxStrength" type="range" min="0" max="2" step="0.05" value="1" />
           </label>
@@ -176,74 +217,34 @@
             <label><input id="beatOutline" type="checkbox" checked /> Glow outlines</label>
           </div>
         </div>
-      </div>
-
-      <label class="field" id="matchField">
-        <span>Match by</span>
-        <select id="match">
-          <option value="color">Color</option>
-          <option value="brightness">Brightness</option>
-        </select>
-      </label>
-
-      <label class="field" id="colorField" hidden>
-        <span>Ink</span>
-        <select id="ink">
-          <option value="full">Full color</option>
-          <option value="#39ff7a">Matrix green</option>
-          <option value="#f2f2f2">White</option>
-          <option value="#ffb000">Amber</option>
-          <option value="#5ec8ff">Cyan</option>
-          <option value="#ff4fd8">Magenta</option>
-        </select>
-      </label>
-
-      <details class="adjust" open>
-        <summary>Adjustments</summary>
-        <div class="adjust-body">
-          <label class="field">
-            <span>Contrast <output id="contrastOut"></output></span>
-            <input id="contrast" type="range" min="0.5" max="3" step="0.05" value="1.2" />
-          </label>
-
-          <label class="field">
-            <span>Brightness <output id="brightOut"></output></span>
-            <input id="bright" type="range" min="-0.5" max="0.5" step="0.01" value="0" />
-          </label>
-
-          <label class="field">
-            <span>Saturation <output id="satOut"></output></span>
-            <input id="sat" type="range" min="0" max="3" step="0.05" value="1" />
-          </label>
-
-          <label class="field">
-            <span>Shadows <output id="shadowsOut"></output></span>
-            <input id="shadows" type="range" min="-1" max="1" step="0.02" value="0" />
-          </label>
-
-          <label class="field">
-            <span>Highlights <output id="highlightsOut"></output></span>
-            <input id="highlights" type="range" min="-1" max="1" step="0.02" value="0" />
-          </label>
-
-          <button id="resetAdjust" type="button" class="reset">Reset adjustments</button>
         </div>
-      </details>
-
-      <div class="toggles">
-        <label><input id="mirror" type="checkbox" checked /> Mirror</label>
-        <label><input id="invert" type="checkbox" /> Invert</label>
-        <label id="blankField"><input id="blank" type="checkbox" checked /> Blank darks</label>
       </div>
 
-      <div class="buttons">
-        <button id="record" class="record" title="Record a video clip (R)">⏺ Record</button>
-        <button id="flip" title="Switch between front and back camera">🔄 Flip</button>
-        <button id="pause" title="Freeze the frame">⏸ Pause</button>
-        <button id="snap" title="Download a PNG">📸 Snapshot</button>
-        <button id="copy" title="Copy the frame as text">📋 Copy text</button>
-        <button id="full" title="Full screen">⛶ Full screen</button>
-        <button id="airplay" title="Open the live picture in the native player, for AirPlay, Picture in Picture and full screen">📺 AirPlay</button>
+      <div class="tab-panel photo-panel" id="photoPanel" data-panel="photo" role="tabpanel" hidden>
+        <span class="field-label">Photo effects</span>
+        <div class="toggles">
+          <label><input id="kenBurns" type="checkbox" checked /> 🎥 Pan &amp; zoom</label>
+          <label><input id="tilt" type="checkbox" /> 📱 Tilt to move</label>
+          <label><input id="twinkle" type="checkbox" /> ✨ Twinkle</label>
+        </div>
+        <div class="tilt-opts" id="tiltOpts" hidden>
+          <label><input id="headTrack" type="checkbox" /> 🙂 Head tracking (webcam)</label>
+          <span class="hint">On a computer, the mouse and the arrow keys tilt it too.</span>
+        </div>
+        <button id="assemble" type="button">🧩 Assemble again</button>
+        <div class="poster-box">
+          <span class="field-label">Poster: a sharp, high-detail picture to save</span>
+          <select id="posterSize" aria-label="Poster size">
+            <option value="4k">4K (3840 px)</option>
+            <option value="wallpaper">Phone wallpaper (1290×2796)</option>
+            <option value="square">Square (2048 px)</option>
+          </select>
+          <label class="field range">
+            <span>Poster detail <output id="posterColsOut"></output></span>
+            <input id="posterCols" type="range" min="80" max="400" value="180" />
+          </label>
+          <button id="makePoster" type="button" class="primary">🖼 Make poster</button>
+        </div>
       </div>
     </section>
   </main>
@@ -342,7 +343,7 @@
             function () { var r = document.createRange(); r.selectNodeContents(pre); var s = getSelection(); s.removeAllRanges(); s.addRange(r); }
           );
         });
-        dbg('page v22', navigator.userAgent);
+        dbg('page v24', navigator.userAgent);
         dbg('secure=' + window.isSecureContext, 'mediaDevices=' + !!navigator.mediaDevices,
             'getUserMedia=' + !!(navigator.mediaDevices && navigator.mediaDevices.getUserMedia));
         if (navigator.permissions && navigator.permissions.query) {
@@ -363,11 +364,11 @@
       window.addEventListener('unhandledrejection', function (e) { dbg('REJECTION', String(e.reason)); show((e.reason && e.reason.message) || String(e.reason)); });
       window.addEventListener('load', function () {
         dbg('load event, app ready = ' + window.emojiFiedReady);
-        if (window.emojiFiedReady !== '22') show('an old or broken copy of the app loaded. Close this tab and open the link again.');
+        if (window.emojiFiedReady !== '24') show('an old or broken copy of the app loaded. Close this tab and open the link again.');
       });
     })();
   </script>
-  <script src="gif.js?v=22"></script>
-  <script src="app.js?v=22"></script>
+  <script src="gif.js?v=24"></script>
+  <script src="app.js?v=24"></script>
 </body>
 </html>
