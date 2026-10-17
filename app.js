@@ -65,6 +65,10 @@ const ui = {
   sourceButtons: [...document.querySelectorAll('[data-source]')],
   fileInput: $('#fileInput'),
   photoPanel: $('#photoPanel'),
+  photoTab: $('#photoTab'),
+  soundDot: $('#soundDot'),
+  tabButtons: [...document.querySelectorAll('[data-tab]')],
+  tabPanels: [...document.querySelectorAll('[data-panel]')],
   kenBurns: $('#kenBurns'),
   tilt: $('#tilt'),
   tiltOpts: $('#tiltOpts'),
@@ -184,6 +188,12 @@ const smoothstep = (a, b, x) => {
   return t * t * (3 - 2 * t);
 };
 const luma = (r, g, b) => 0.2126 * r + 0.7152 * g + 0.0722 * b;
+
+// Toolbar buttons hold an icon and a short label.
+function setTool(btn, ico, lbl) {
+  btn.querySelector('.ico').textContent = ico;
+  btn.querySelector('.lbl').textContent = lbl;
+}
 
 let toastTimer;
 function toast(msg) {
@@ -796,7 +806,7 @@ function stopRecording() {
 function setRecordUI(time) {
   const recording = time !== null;
   ui.record.classList.toggle('recording', recording);
-  ui.record.textContent = recording ? `⏹ Stop ${time}` : '⏺ Record';
+  setTool(ui.record, recording ? '⏹' : '⏺', recording ? time : 'Record');
 }
 
 function updateRecordButton() {
@@ -1440,7 +1450,9 @@ function stopCurrentSource() {
 function updateSourceUI() {
   for (const b of ui.sourceButtons) b.setAttribute('aria-pressed', String(b.dataset.source === state.source));
   ui.flip.disabled = state.source !== 'camera';
-  ui.photoPanel.hidden = !isPhotoSource();
+  // The Photo tab only exists for photos and GIFs.
+  ui.photoTab.hidden = !isPhotoSource();
+  if (!isPhotoSource() && currentTab === 'photo') setTab('look');
   // Head tracking uses the camera, so it ends when the source changes.
   if (!isPhotoSource() && (head.on || ui.headTrack.checked)) {
     ui.headTrack.checked = false;
@@ -1548,6 +1560,7 @@ async function playImage(file, isGif) {
   layout();
   connectSoundInput().catch((err) => dbg('sound input failed:', err.name, err.message));
   startAssemble();
+  setTab('photo'); // show what you can do with it
   toast(decoded ? `🎞 ${file.name} · ${decoded.frames.length} frames` : `🖼 ${file.name}`);
 }
 
@@ -2046,6 +2059,7 @@ async function onSoundModeChange() {
   const mode = ui.sound.value;
   ui.meter.hidden = mode === 'off';
   ui.soundOpts.hidden = mode === 'off';
+  ui.soundDot.hidden = mode === 'off'; // a dot on the Sound tab while it's on
   if (mode === 'off') {
     stopMic();
     return;
@@ -2320,6 +2334,23 @@ async function showOnTv() {
 }
 
 // ---------------------------------------------------------------------------
+// Tabs: Look / Sound / Photo, one open at a time (the choice is remembered)
+// ---------------------------------------------------------------------------
+
+let currentTab = 'look';
+
+function setTab(name) {
+  if (name === 'photo' && !isPhotoSource()) name = 'look';
+  currentTab = name;
+  for (const b of ui.tabButtons) b.setAttribute('aria-selected', String(b.dataset.tab === name));
+  for (const p of ui.tabPanels) p.hidden = p.dataset.panel !== name;
+  try { localStorage.setItem('emojiFiedTab', name); } catch {}
+}
+
+for (const b of ui.tabButtons) b.addEventListener('click', () => setTab(b.dataset.tab));
+try { setTab(localStorage.getItem('emojiFiedTab') || 'look'); } catch { setTab('look'); }
+
+// ---------------------------------------------------------------------------
 // Wiring
 // ---------------------------------------------------------------------------
 
@@ -2406,7 +2437,7 @@ for (const ev of ['pointerdown', 'pointermove', 'touchstart']) {
 }
 ui.pause.addEventListener('click', () => {
   state.paused = !state.paused;
-  ui.pause.textContent = state.paused ? '▶ Resume' : '⏸ Pause';
+  setTool(ui.pause, state.paused ? '▶' : '⏸', state.paused ? 'Resume' : 'Pause');
   if (state.source === 'file' && state.fileKind === 'video') state.paused ? video.pause() : video.play().catch(() => {});
 });
 for (const b of ui.sourceButtons) {
@@ -2515,5 +2546,5 @@ try {
 } catch (err) {
   ui.error.textContent = `Setup failed: ${err.message}`;
 }
-window.emojiFiedReady = '23';
-dbg('app.js v23 initialised');
+window.emojiFiedReady = '24';
+dbg('app.js v24 initialised');
