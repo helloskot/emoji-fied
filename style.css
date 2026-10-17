@@ -344,6 +344,7 @@ input[type="range"] { width: 100%; accent-color: var(--accent); }
 }
 .toggles label { display: flex; align-items: center; gap: 6px; cursor: pointer; }
 .toggles label[hidden] { display: none; }
+.toggles[hidden] { display: none; }
 .toggles input { accent-color: var(--accent); width: 16px; height: 16px; }
 
 .buttons {

@@ -39,8 +39,8 @@ the stream. Sharing the tab gets the same result.
 
 **React to sound** (uses the microphone): *Pulse* makes the glyphs swell with
 loudness, and every beat sends a wave out from the center in a shape (circle, heart,
-spinning star, square, diamond, hexagon or a sweep; mixed or fixed, with
-optional glow outlines), shifts the hues,
+spinning star, square, diamond, hexagon or a sweep; mixed, fixed or off,
+with optional glow outlines), shifts the hues,
 flashes, shakes and zoom-punches the picture; *Shuffle on beats* switches to a random look on each
 beat, or both. **Sensitivity** and **Effect strength** sliders tune it. While it's on,
 recorded clips include the audio.
