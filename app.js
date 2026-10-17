@@ -92,6 +92,7 @@ const ui = {
   fxStrength: $('#fxStrength'),
   fxOut: $('#fxOut'),
   beatShape: $('#beatShape'),
+  beatOutlineRow: $('#beatOutlineRow'),
   beatOutline: $('#beatOutline'),
   custom: $('#custom'),
   customField: $('#customField'),
@@ -1648,6 +1649,7 @@ function waveDist(rp, px, py, rot) {
 
 function spawnWave(now) {
   let shape = ui.beatShape.value;
+  if (shape === 'off') return; // beats still swell, flash and shift colour
   if (shape === 'mix') {
     do shape = pick(SHAPE_NAMES);
     while (shape === sound.lastShape);
@@ -2291,6 +2293,11 @@ ui.snap.addEventListener('click', snapshot);
 ui.copy.addEventListener('click', copyText);
 ui.random.addEventListener('click', () => randomize());
 ui.sound.addEventListener('change', onSoundModeChange);
+ui.beatShape.addEventListener('change', () => {
+  const off = ui.beatShape.value === 'off';
+  ui.beatOutlineRow.hidden = off; // outlines only apply to shapes
+  if (off) sound.ripples = []; // clear any wave already on screen
+});
 ui.sens.addEventListener('input', syncLabels);
 ui.fxStrength.addEventListener('input', syncLabels);
 const toggleRecording = () => (rec.recorder ? stopRecording() : startRecording());
@@ -2320,5 +2327,5 @@ try {
 } catch (err) {
   ui.error.textContent = `Setup failed: ${err.message}`;
 }
-window.emojiFiedReady = '19';
-dbg('app.js v19 initialised');
+window.emojiFiedReady = '20';
+dbg('app.js v20 initialised');
