@@ -67,6 +67,8 @@ const ui = {
   photoPanel: $('#photoPanel'),
   kenBurns: $('#kenBurns'),
   tilt: $('#tilt'),
+  tiltOpts: $('#tiltOpts'),
+  headTrack: $('#headTrack'),
   twinkle: $('#twinkle'),
   assemble: $('#assemble'),
   posterSize: $('#posterSize'),
@@ -634,6 +636,7 @@ function loop() {
   const showFlip = state.source === 'camera' && !!state.stream && ui.overlay.hidden && state.cameraCount !== 1;
   if (ui.flipFab.hidden === showFlip) ui.flipFab.hidden = !showFlip;
   updateSound();
+  trackHead(performance.now());
   if (rec.recorder) copyFrameToRecording();
   gifTick(performance.now());
   if (!state.paused && frameReady()) {
@@ -1068,7 +1071,8 @@ function hash3(x, y, s) {
 const ASSEMBLE_MS = 1800;
 const photoState = { assembleAt: -Infinity };
 // Tilt: target (tx, ty) from the motion sensor or the mouse, eased into (x, y).
-const motion = { x: 0, y: 0, tx: 0, ty: 0, sensor: false };
+// Arrow keys held right now win over the other inputs while they're down.
+const motion = { x: 0, y: 0, tx: 0, ty: 0, sensor: false, keys: new Set() };
 
 // Pan & zoom ("Ken Burns") and tilt move a window over the picture.
 function photoCrop(W, H) {
@@ -1083,8 +1087,13 @@ function photoCrop(W, H) {
     cy += 0.08 * Math.sin((t * TAU) / 26 + 1.3);
   }
   if (tilt) {
-    motion.x += (motion.tx - motion.x) * 0.15;
-    motion.y += (motion.ty - motion.y) * 0.15;
+    let gx = motion.tx, gy = motion.ty;
+    if (motion.keys.size) {
+      gx = (motion.keys.has('ArrowRight') ? 1 : 0) - (motion.keys.has('ArrowLeft') ? 1 : 0);
+      gy = (motion.keys.has('ArrowDown') ? 1 : 0) - (motion.keys.has('ArrowUp') ? 1 : 0);
+    }
+    motion.x += (gx - motion.x) * 0.15;
+    motion.y += (gy - motion.y) * 0.15;
     z = Math.max(z, 1.18);
     cx += motion.x * 0.08;
     cy += motion.y * 0.08;
@@ -1161,7 +1170,111 @@ async function enableTilt() {
     }
   }
   window.addEventListener('deviceorientation', onOrientation);
-  toast('📱 Tilt your phone (or move the mouse over the picture)');
+  toast('📱 Tilt your phone. On a computer: mouse, arrow keys or head tracking');
+}
+
+// ---- Head tracking: the webcam steers the tilt ------------------------------
+// MediaPipe's face detector runs locally in the browser (WebAssembly); the
+// camera image never leaves the device. The library (~10 MB with its
+// WebAssembly) and the 230 KB model load the first time it's switched on.
+// Moving your head shifts the view the other way, like a window.
+
+const MP_BASE = window.EMOJI_MP_BASE || 'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.18';
+const FACE_MODEL = window.EMOJI_FACE_MODEL ||
+  'https://storage.googleapis.com/mediapipe-models/face_detector/blaze_face_short_range/float16/1/blaze_face_short_range.tflite';
+
+const head = { on: false, loading: false, detector: null, stream: null, video: null, lastT: 0, seenAt: 0, neutral: null, calib: [] };
+
+async function loadFaceDetector() {
+  const vision = await import(`${MP_BASE}/vision_bundle.mjs`);
+  const fileset = await vision.FilesetResolver.forVisionTasks(`${MP_BASE}/wasm`);
+  const make = (delegate) =>
+    vision.FaceDetector.createFromOptions(fileset, {
+      baseOptions: { modelAssetPath: FACE_MODEL, delegate },
+      runningMode: 'VIDEO',
+      minDetectionConfidence: 0.6,
+    });
+  try {
+    return await make('GPU');
+  } catch (err) {
+    dbg('face detector on GPU failed, using CPU:', err.message);
+    return make('CPU');
+  }
+}
+
+async function startHeadTracking() {
+  if (head.on || head.loading) return;
+  head.loading = true;
+  toast('🙂 Loading head tracking…');
+  try {
+    head.detector = head.detector || (await loadFaceDetector());
+    head.stream = await navigator.mediaDevices.getUserMedia({
+      video: { facingMode: 'user', width: { ideal: 640 }, height: { ideal: 480 } },
+      audio: false,
+    });
+    if (!head.video) {
+      head.video = document.createElement('video');
+      head.video.muted = true;
+      head.video.playsInline = true;
+      // Kept in the page (but invisible) so every browser keeps decoding it.
+      head.video.style.cssText = 'position:fixed;left:0;bottom:0;width:2px;height:2px;opacity:0.01;pointer-events:none';
+      document.body.appendChild(head.video);
+    }
+    head.video.srcObject = head.stream;
+    await head.video.play();
+    head.neutral = null;
+    head.calib = [];
+    head.on = true;
+    dbg('head tracking on');
+    toast('🙂 Move your head to look around');
+  } catch (err) {
+    dbg('head tracking failed:', err.name, err.message);
+    ui.headTrack.checked = false;
+    toast(err.name === 'NotAllowedError' ? 'Camera permission was denied' : 'Couldn’t start head tracking');
+  } finally {
+    head.loading = false;
+  }
+}
+
+function stopHeadTracking() {
+  head.on = false;
+  head.stream?.getTracks().forEach((t) => t.stop());
+  head.stream = null;
+  if (head.video) head.video.srcObject = null;
+  motion.tx = motion.ty = 0;
+}
+
+// Called every frame; detects ~15 times a second.
+function trackHead(now) {
+  if (!head.on || head.video.readyState < 2 || now - head.lastT < 66) return;
+  head.lastT = now;
+  let face;
+  try {
+    face = head.detector.detectForVideo(head.video, now).detections[0];
+  } catch (err) {
+    dbg('face detection error:', err.message);
+    return;
+  }
+  if (!face) {
+    // Lost the face for a moment: drift back to the middle.
+    if (now - head.seenAt > 1000) motion.tx = motion.ty = 0;
+    return;
+  }
+  head.seenAt = now;
+  const b = face.boundingBox;
+  const fx = (b.originX + b.width / 2) / head.video.videoWidth;
+  const fy = (b.originY + b.height / 2) / head.video.videoHeight;
+  // The first half second sets "straight ahead" to wherever you're sitting.
+  if (!head.neutral) {
+    head.calib.push([fx, fy]);
+    if (head.calib.length < 8) return;
+    head.neutral = head.calib.reduce((a, p) => [a[0] + p[0] / head.calib.length, a[1] + p[1] / head.calib.length], [0, 0]);
+    dbg(`head tracking calibrated at ${head.neutral.map((v) => v.toFixed(2)).join(', ')}`);
+  }
+  // The webcam image isn't mirrored: leaning right moves the face left in it,
+  // and the view shifts left, as through a window.
+  motion.tx = Math.max(-1, Math.min(1, (fx - head.neutral[0]) * 3.5));
+  motion.ty = Math.max(-1, Math.min(1, -(fy - head.neutral[1]) * 3.5));
 }
 
 // ---- Poster: a high-detail render of the current frame ------------------------
@@ -1275,6 +1388,11 @@ function updateSourceUI() {
   for (const b of ui.sourceButtons) b.setAttribute('aria-pressed', String(b.dataset.source === state.source));
   ui.flip.disabled = state.source !== 'camera';
   ui.photoPanel.hidden = !isPhotoSource();
+  // Head tracking uses the camera, so it ends when the source changes.
+  if (!isPhotoSource() && (head.on || ui.headTrack.checked)) {
+    ui.headTrack.checked = false;
+    stopHeadTracking();
+  }
 }
 
 async function useCamera() {
@@ -2250,15 +2368,20 @@ ui.startFile.addEventListener('click', chooseFile);
 ui.startScreen.addEventListener('click', startScreen);
 ui.assemble.addEventListener('click', startAssemble);
 ui.tilt.addEventListener('change', () => {
+  ui.tiltOpts.hidden = !ui.tilt.checked;
   if (ui.tilt.checked) enableTilt();
   else {
     window.removeEventListener('deviceorientation', onOrientation);
+    ui.headTrack.checked = false;
+    stopHeadTracking();
+    motion.keys.clear();
     motion.tx = motion.ty = 0;
   }
 });
+ui.headTrack.addEventListener('change', () => (ui.headTrack.checked ? startHeadTracking() : stopHeadTracking()));
 // Without a motion sensor (computers), the mouse over the picture tilts it.
 ui.stage.addEventListener('pointermove', (e) => {
-  if (!ui.tilt.checked || motion.sensor) return;
+  if (!ui.tilt.checked || motion.sensor || head.on) return;
   const r = ui.stage.getBoundingClientRect();
   motion.tx = ((e.clientX - r.left) / r.width) * 2 - 1;
   motion.ty = ((e.clientY - r.top) / r.height) * 2 - 1;
@@ -2307,6 +2430,18 @@ ui.clipDownload.addEventListener('click', downloadClip);
 ui.clipDiscard.addEventListener('click', closeClip);
 video.addEventListener('loadedmetadata', layout);
 
+// Arrow keys tilt photos while "Tilt to move" is on (hold to lean).
+const ARROWS = ['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown'];
+document.addEventListener('keydown', (e) => {
+  if (!ARROWS.includes(e.key) || !ui.tilt.checked || !isPhotoSource()) return;
+  // Leave arrows to controls that use them (sliders, menus, text fields).
+  if (e.target.closest('select, textarea, input[type="range"], input[type="text"]')) return;
+  e.preventDefault(); // don't scroll the page
+  motion.keys.add(e.key);
+});
+document.addEventListener('keyup', (e) => motion.keys.delete(e.key));
+window.addEventListener('blur', () => motion.keys.clear());
+
 document.addEventListener('keydown', (e) => {
   if (e.target.matches('input[type="text"], select')) return;
   if (e.key === ' ') { e.preventDefault(); ui.pause.click(); }
@@ -2327,5 +2462,5 @@ try {
 } catch (err) {
   ui.error.textContent = `Setup failed: ${err.message}`;
 }
-window.emojiFiedReady = '20';
-dbg('app.js v20 initialised');
+window.emojiFiedReady = '21';
+dbg('app.js v21 initialised');
