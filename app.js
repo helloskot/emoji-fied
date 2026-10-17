@@ -2500,11 +2500,13 @@ ui.snap.addEventListener('click', snapshot);
 ui.copy.addEventListener('click', copyText);
 ui.random.addEventListener('click', () => randomize());
 ui.sound.addEventListener('change', onSoundModeChange);
-ui.beatShape.addEventListener('change', () => {
+const onBeatShapeChange = () => {
   const off = ui.beatShape.value === 'off';
   ui.beatOutlineRow.hidden = off; // outlines only apply to shapes
   if (off) sound.ripples = []; // clear any wave already on screen
-});
+};
+ui.beatShape.addEventListener('change', onBeatShapeChange);
+onBeatShapeChange(); // the browser may restore an earlier choice on reload
 ui.sens.addEventListener('input', syncLabels);
 ui.fxStrength.addEventListener('input', syncLabels);
 const toggleRecording = () => (rec.recorder ? stopRecording() : startRecording());
@@ -2546,5 +2548,5 @@ try {
 } catch (err) {
   ui.error.textContent = `Setup failed: ${err.message}`;
 }
-window.emojiFiedReady = '24';
-dbg('app.js v24 initialised');
+window.emojiFiedReady = '25';
+dbg('app.js v25 initialised');
