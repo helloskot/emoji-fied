@@ -64,6 +64,17 @@ main {
   place-items: center;
 }
 
+/* Side-by-side layout (computers): the controls column runs long, so the
+   picture sticks to the top of the window while you scroll it, capped to
+   the window height so tall pictures still fit. */
+@media (min-width: 960px) {
+  .stage {
+    position: sticky;
+    top: 16px;
+    max-height: calc(100vh - 32px);
+  }
+}
+
 #out {
   display: block;
   width: 100%;
@@ -90,6 +101,7 @@ main {
    kept as separate rules because an unknown selector drops a whole list. */
 body.immersive { overflow: hidden; }
 body.immersive .stage {
+  max-height: none;
   position: fixed;
   inset: 0;
   z-index: 50;
@@ -101,6 +113,7 @@ body.immersive .stage {
   border-radius: 0;
 }
 .stage:fullscreen {
+  max-height: none;
   width: 100vw;
   height: 100vh;
   aspect-ratio: auto !important;
@@ -108,6 +121,7 @@ body.immersive .stage {
   border-radius: 0;
 }
 .stage:-webkit-full-screen {
+  max-height: none;
   width: 100vw;
   height: 100vh;
   aspect-ratio: auto !important;
