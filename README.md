@@ -40,6 +40,11 @@ the stream. Sharing the tab gets the same result.
 - **Custom**: type any characters. If they contain emoji they're color-matched;
   otherwise they're used as a brightness ramp (automatically sorted by how
   much ink each glyph uses, so order doesn't matter).
+- **🧱 Tetris** (on the Look tab, or press T; works with any source): the
+  picture builds itself from falling Tetris pieces made of its own glyphs.
+  They drop onto the stack bottom row first, turning and sliding a cell at a
+  time like the game; the finished picture holds for a few seconds, then the
+  lines clear and new pieces build it again.
 
 **React to sound** (uses the microphone): *Pulse* makes the glyphs swell with
 loudness, and every beat sends a wave out from the center in a shape (circle, heart,
