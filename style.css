@@ -281,6 +281,11 @@ input[type="text"] { font-size: 18px; }
   background: var(--panel-2);
 }
 .photo-panel[hidden] { display: none; }
+.tilt-opts { display: grid; gap: 4px; padding-left: 4px; }
+.tilt-opts[hidden] { display: none; }
+.tilt-opts label { display: flex; align-items: center; gap: 6px; cursor: pointer; }
+.tilt-opts input { accent-color: var(--accent); width: 16px; height: 16px; }
+.hint { color: var(--muted); font-size: 12px; }
 .poster-box { display: grid; gap: 8px; padding-top: 10px; border-top: 1px solid var(--line); }
 #posterImg {
   width: 100%;

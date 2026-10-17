@@ -13,7 +13,7 @@
   <link rel="apple-touch-icon" href="icons/icon-180.png" />
   <title>Emoji-fied</title>
   <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🤩</text></svg>" />
-  <link rel="stylesheet" href="style.css?v=20" />
+  <link rel="stylesheet" href="style.css?v=21" />
 </head>
 <body>
   <header>
@@ -56,7 +56,7 @@
           </div>
           <p class="status" id="status" aria-live="polite"></p>
           <p class="error" id="error" role="alert"></p>
-          <p class="note">Everything runs in your browser. No video leaves your device. <span class="version">v20</span></p>
+          <p class="note">Everything runs in your browser. No video leaves your device. <span class="version">v21</span></p>
         </div>
       </div>
     </div>
@@ -78,6 +78,10 @@
           <label><input id="kenBurns" type="checkbox" checked /> 🎥 Pan &amp; zoom</label>
           <label><input id="tilt" type="checkbox" /> 📱 Tilt to move</label>
           <label><input id="twinkle" type="checkbox" /> ✨ Twinkle</label>
+        </div>
+        <div class="tilt-opts" id="tiltOpts" hidden>
+          <label><input id="headTrack" type="checkbox" /> 🙂 Head tracking (webcam)</label>
+          <span class="hint">On a computer, the mouse and the arrow keys tilt it too.</span>
         </div>
         <button id="assemble" type="button">🧩 Assemble again</button>
         <div class="poster-box">
@@ -338,7 +342,7 @@
             function () { var r = document.createRange(); r.selectNodeContents(pre); var s = getSelection(); s.removeAllRanges(); s.addRange(r); }
           );
         });
-        dbg('page v20', navigator.userAgent);
+        dbg('page v21', navigator.userAgent);
         dbg('secure=' + window.isSecureContext, 'mediaDevices=' + !!navigator.mediaDevices,
             'getUserMedia=' + !!(navigator.mediaDevices && navigator.mediaDevices.getUserMedia));
         if (navigator.permissions && navigator.permissions.query) {
@@ -359,11 +363,11 @@
       window.addEventListener('unhandledrejection', function (e) { dbg('REJECTION', String(e.reason)); show((e.reason && e.reason.message) || String(e.reason)); });
       window.addEventListener('load', function () {
         dbg('load event, app ready = ' + window.emojiFiedReady);
-        if (window.emojiFiedReady !== '20') show('an old or broken copy of the app loaded. Close this tab and open the link again.');
+        if (window.emojiFiedReady !== '21') show('an old or broken copy of the app loaded. Close this tab and open the link again.');
       });
     })();
   </script>
-  <script src="gif.js?v=20"></script>
-  <script src="app.js?v=20"></script>
+  <script src="gif.js?v=21"></script>
+  <script src="app.js?v=21"></script>
 </body>
 </html>
