@@ -40,6 +40,13 @@ the stream. Sharing the tab gets the same result.
 - **Custom**: type any characters. If they contain emoji they're color-matched;
   otherwise they're used as a brightness ramp (automatically sorted by how
   much ink each glyph uses, so order doesn't matter).
+- **🧱 Tetris** (on the Look tab, or press T; works with any source): the
+  picture builds itself from falling Tetris pieces made of its own glyphs.
+  They drop onto the stack bottom row first, turning and sliding a cell at a
+  time like the game; the finished picture holds for a few seconds, then the
+  lines clear and new pieces build it again. With 🎹 MIDI on, your playing drops the
+  pieces instead: each note releases a batch (more for a harder hit), low notes
+  on the left and high notes on the right.
 
 **React to sound** (uses the microphone): *Pulse* makes the glyphs swell with
 loudness, and every beat sends a wave out from the center in a shape (circle, heart,
@@ -48,6 +55,13 @@ one or mix them, with optional glow outlines), shifts the hues,
 flashes, shakes and zoom-punches the picture; *Shuffle on beats* switches to a random look on each
 beat, or both. **Sensitivity** and **Effect strength** sliders tune it. While it's on,
 recorded clips include the audio.
+
+**🎹 React to MIDI** (Sound tab; Chrome, Edge or Firefox on a computer, as
+Safari has no Web MIDI): plug in a keyboard or drum pads, or send MIDI from a
+music app. Every note hits like a beat, as hard as it was played (flash, shake,
+zoom punch, beat shapes, shuffles), and its pitch nudges the hues; held notes
+swell the glyphs, the pitch bend wheel shifts the hues and the mod wheel adds
+swell. It works alongside the microphone or on its own.
 
 Front/back camera: the switch button over the camera view (or `F`); mirroring
 follows the camera and recordings carry on through a switch.

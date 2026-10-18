@@ -94,6 +94,9 @@ const ui = {
   meterFill: $('#meterFill'),
   soundOpts: $('#soundOpts'),
   sens: $('#sens'),
+  sensField: $('#sensField'),
+  midi: $('#midi'),
+  midiStatus: $('#midiStatus'),
   sensOut: $('#sensOut'),
   fxStrength: $('#fxStrength'),
   fxOut: $('#fxOut'),
@@ -122,6 +125,7 @@ const ui = {
   mirror: $('#mirror'),
   invert: $('#invert'),
   blank: $('#blank'),
+  tetris: $('#tetris'),
   blankField: $('#blankField'),
   flip: $('#flip'),
   flipFab: $('#flipFab'),
@@ -1165,14 +1169,17 @@ function photoCrop(W, H) {
   return [Math.min(Math.max(cx * W - w / 2, 0), W - w), Math.min(Math.max(cy * H - h / 2, 0), H - h), w, h];
 }
 
-// Per-frame photo effects for the renderer, or null when there are none.
+// Per-frame cell effects for the renderer, or null when there are none: the
+// photo effects, plus the Tetris build, which works on any source.
 function photoFx() {
-  if (!isPhotoSource()) return null;
   const now = performance.now();
-  const asm = (now - photoState.assembleAt) / ASSEMBLE_MS;
+  const tet = tetrisFrame(now);
+  if (!isPhotoSource()) return tet && { t: now / 1000, twinkle: false, asm: null, tet, w: out.width, h: out.height };
+  // With Tetris on, pieces build the picture instead of the fly-in.
+  const asm = ui.tetris.checked ? 1 : (now - photoState.assembleAt) / ASSEMBLE_MS;
   const twinkle = ui.twinkle.checked;
-  if (!twinkle && asm >= 1) return null;
-  return { t: now / 1000, twinkle, asm: asm < 1 ? asm : null, w: out.width, h: out.height };
+  if (!twinkle && asm >= 1 && !tet) return null;
+  return { t: now / 1000, twinkle, asm: asm < 1 ? asm : null, tet, w: out.width, h: out.height };
 }
 
 // Twinkle: now and then a cell shimmers to a neighbouring glyph.
@@ -1201,11 +1208,276 @@ function photoCell(ph, x, y) {
     oy = Math.sin(a) * dist * left;
     k *= Math.max(0, easeOutBack(p));
   }
+  if (ph.tet) {
+    // Tetris: the cell rides with its piece, turned and shifted a whole
+    // cell at a time.
+    const T = ph.tet, P = T.plan;
+    const i = P.owner[y * P.cols + x];
+    const pk = P.k[i] * (T.clearing ? P.rowK[y] : 1);
+    if (!(pk > 0)) return { k: 0, ox: 0, oy: 0 };
+    if (P.drop[i] || P.turn[i] || P.shift[i]) {
+      let rx = x - P.px[i], ry = y - P.py[i];
+      for (let r = P.turn[i]; r > 0; r--) {
+        const t = rx;
+        rx = -ry;
+        ry = t;
+      }
+      ox += (P.px[i] + rx + P.shift[i] - x) * T.cw;
+      oy += (P.py[i] + ry - P.drop[i] - y) * T.ch;
+    }
+    k *= pk;
+  }
   return { k, ox, oy };
 }
 
 function startAssemble() {
   photoState.assembleAt = performance.now();
+  tetris.plan = null; // with Tetris on, build it again from the first piece
+}
+
+// ---- Tetris build -----------------------------------------------------------
+// The picture builds itself from falling tetrominoes made of its own glyphs.
+// The grid is cut into pieces, which drop onto the stack bottom row first,
+// turning and sliding a cell at a time on the way down like the game. Once
+// it's built it holds for a while, the lines clear from the bottom up, and it
+// starts over with new pieces.
+
+const TETRIS_FALL_MS = 900; // a piece's drop from the top to the bottom row
+const TETRIS_BUILD_MS = 6000; // from the first piece landing to the last
+const TETRIS_HOLD_MS = 5000; // the finished picture
+const TETRIS_LAND_MS = 160; // the little bump as a piece locks in
+const TETRIS_SWEEP_MS = 700; // line clear, bottom row to top row
+const TETRIS_ROW_MS = 320; // one line flashing and vanishing
+
+// Every distinct orientation of a piece, as [x, y] cells (y down), plus the
+// cell a bottom-up, left-to-right scan reaches first (the lowest row's
+// leftmost), which is where the piece gets anchored when tiling.
+function orientations(cells) {
+  const out = [], seen = new Set();
+  let cur = cells;
+  for (let r = 0; r < 4; r++) {
+    const mx = Math.min(...cur.map((c) => c[0])), my = Math.min(...cur.map((c) => c[1]));
+    const norm = cur.map(([x, y]) => [x - mx, y - my]);
+    const key = norm.map(String).sort().join(';');
+    if (!seen.has(key)) {
+      seen.add(key);
+      const ay = Math.max(...norm.map((c) => c[1]));
+      const ax = Math.min(...norm.filter((c) => c[1] === ay).map((c) => c[0]));
+      out.push({ cells: norm, ax, ay });
+    }
+    cur = cur.map(([x, y]) => [-y, x]);
+  }
+  return out;
+}
+const TETROMINOES = [
+  [[0, 0], [1, 0], [2, 0], [3, 0]], // I
+  [[0, 0], [1, 0], [0, 1], [1, 1]], // O
+  [[0, 0], [1, 0], [2, 0], [1, 1]], // T
+  [[1, 0], [2, 0], [0, 1], [1, 1]], // S
+  [[0, 0], [1, 0], [1, 1], [2, 1]], // Z
+  [[0, 0], [0, 1], [0, 2], [1, 2]], // L
+  [[1, 0], [1, 1], [1, 2], [0, 2]], // J
+].flatMap(orientations);
+// Smaller bits for the gaps no tetromino fits.
+const TETRIS_FILL = [
+  [[0, 0], [1, 0], [2, 0]],
+  [[0, 0], [1, 0], [0, 1]],
+  [[0, 0], [1, 0]],
+  [[0, 0]],
+].flatMap(orientations);
+
+const tetris = { plan: null, seed: 1 };
+
+// Played from MIDI, the pieces wait for notes instead of a timeline.
+const tetrisByNotes = () => midi.on && midi.devices > 0;
+
+function tetrisPlan(cols, rows, start, byNotes) {
+  const seed = tetris.seed++;
+  let n = 0;
+  const rnd = () => hash3(seed, n++, 11);
+  const owner = new Int32Array(cols * rows).fill(-1);
+  const pieces = [];
+  const free = (gx, gy) => gx >= 0 && gx < cols && gy >= 0 && gy < rows && owner[gy * cols + gx] < 0;
+  // Tile greedily, bottom-up: each free cell starts a piece that only
+  // covers free cells, trying the tetrominoes from a random one first and
+  // preferring a placement that doesn't cut off a lone free cell (which
+  // could only ever be a one-cell piece).
+  for (let y = rows - 1; y >= 0; y--) {
+    for (let x = 0; x < cols; x++) {
+      if (owner[y * cols + x] >= 0) continue;
+      const fits = (sh) => sh.cells.every(([cx, cy]) => free(x + cx - sh.ax, y + cy - sh.ay));
+      const strands = (sh) => {
+        const taken = (gx, gy) => sh.cells.some(([cx, cy]) => x + cx - sh.ax === gx && y + cy - sh.ay === gy);
+        const open = (gx, gy) => free(gx, gy) && !taken(gx, gy);
+        let lone = 0;
+        for (const [cx, cy] of sh.cells) {
+          for (const [nx, ny] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+            const gx = x + cx - sh.ax + nx, gy = y + cy - sh.ay + ny;
+            if (open(gx, gy) && !open(gx + 1, gy) && !open(gx - 1, gy) && !open(gx, gy + 1) && !open(gx, gy - 1)) lone++;
+          }
+        }
+        return lone;
+      };
+      let shape = null, best = Infinity;
+      const o = (rnd() * TETROMINOES.length) | 0;
+      for (let i = 0; i < TETROMINOES.length && best > 0; i++) {
+        const sh = TETROMINOES[(o + i) % TETROMINOES.length];
+        if (!fits(sh)) continue;
+        const lone = strands(sh);
+        if (lone < best) {
+          shape = sh;
+          best = lone;
+        }
+      }
+      shape = shape || TETRIS_FILL.find(fits);
+      const id = pieces.length;
+      let sx = 0, sy = 0;
+      for (const [cx, cy] of shape.cells) {
+        const gx = x + cx - shape.ax, gy = y + cy - shape.ay;
+        owner[gy * cols + gx] = id;
+        sx += gx;
+        sy += gy;
+      }
+      pieces.push({
+        px: Math.round(sx / shape.cells.length), py: Math.round(sy / shape.cells.length),
+        bottom: y, order: y + rnd() * 2.5,
+      });
+    }
+  }
+
+  const count = pieces.length;
+  const P = {
+    cols, rows, owner, count, start,
+    px: new Int16Array(count), py: new Int16Array(count),
+    rot: new Int8Array(count), slide: new Int8Array(count),
+    dist: new Int16Array(count), fallMs: new Float32Array(count), landAt: new Float64Array(count),
+    // This frame's state of each piece; k = 0 while it waits to drop.
+    k: new Float32Array(count), drop: new Int16Array(count),
+    turn: new Int8Array(count), shift: new Int8Array(count),
+    rowK: new Float32Array(rows),
+  };
+  // Lowest pieces land first (with some jitter), so the stack grows upward.
+  const byOrder = pieces.map((_, i) => i).sort((a, b) => pieces[b].order - pieces[a].order);
+  byOrder.forEach((i, rank) => {
+    const pc = pieces[i];
+    P.px[i] = pc.px;
+    P.py[i] = pc.py;
+    P.rot[i] = (rnd() * 4) | 0;
+    P.slide[i] = Math.round((rnd() * 2 - 1) * 3);
+    P.dist[i] = pc.bottom + 3; // start just above the top
+    P.fallMs[i] = (P.dist[i] / rows) * TETRIS_FALL_MS;
+    P.landAt[i] = start + TETRIS_FALL_MS + (rank / Math.max(1, count - 1)) * TETRIS_BUILD_MS;
+  });
+  P.byNotes = byNotes;
+  if (byNotes) {
+    // Nothing drops until notes release it. The grid is split into bands
+    // left to right, each with its pieces bottom row first; a note's pitch
+    // picks the band.
+    P.landAt.fill(Infinity);
+    P.bands = Math.max(4, Math.min(12, Math.round(cols / 8)));
+    P.queues = Array.from({ length: P.bands }, () => []);
+    for (const i of byOrder) P.queues[Math.min(P.bands - 1, Math.floor((P.px[i] * P.bands) / cols))].push(i);
+    P.next = new Int32Array(P.bands); // the next piece to release in each band
+    P.bandLast = new Float64Array(P.bands); // when the band's last released piece lands
+    P.unreleased = count;
+    P.trickleAt = start;
+    P.builtAt = P.clearAt = P.endAt = Infinity;
+    return P;
+  }
+  P.builtAt = start + TETRIS_FALL_MS + TETRIS_BUILD_MS + TETRIS_LAND_MS;
+  P.clearAt = P.builtAt + TETRIS_HOLD_MS;
+  P.endAt = P.clearAt + TETRIS_SWEEP_MS + TETRIS_ROW_MS + 150;
+  return P;
+}
+
+// Drop the next n pieces, from the band nearest `band` that has some left.
+function tetrisRelease(P, band, n, now) {
+  const stagger = Math.min(18, 160 / n);
+  for (let k = 0; k < n && P.unreleased; k++) {
+    let b = -1;
+    for (let d = 0; b < 0 && d < P.bands; d++) {
+      if (band - d >= 0 && P.next[band - d] < P.queues[band - d].length) b = band - d;
+      else if (band + d < P.bands && P.next[band + d] < P.queues[band + d].length) b = band + d;
+    }
+    const i = P.queues[b][P.next[b]++];
+    // Never land before the piece released just before it in the band, so
+    // the stack doesn't grow from the top when notes come fast.
+    P.landAt[i] = Math.max(now + k * stagger + P.fallMs[i], P.bandLast[b] + 12);
+    P.bandLast[b] = P.landAt[i];
+    P.unreleased--;
+  }
+  if (!P.unreleased) {
+    P.builtAt = Math.max(...P.bandLast) + TETRIS_LAND_MS;
+    P.clearAt = P.builtAt + TETRIS_HOLD_MS;
+    P.endAt = P.clearAt + TETRIS_SWEEP_MS + TETRIS_ROW_MS + 150;
+  }
+}
+
+// A note drops a batch of pieces, more for a harder hit, in the band its
+// pitch maps to (over the range of notes played so far): a full picture
+// takes about 40 notes.
+function tetrisNote(note, vel, now) {
+  const P = tetris.plan;
+  if (!P || !P.byNotes || !P.unreleased) return;
+  const span = Math.max(12, midi.hi - midi.lo);
+  const band = Math.min(P.bands - 1, Math.max(0, Math.floor(((note - midi.lo) / (span + 1)) * P.bands)));
+  tetrisRelease(P, band, Math.max(1, Math.round((P.count / 60) * (0.4 + vel))), now);
+}
+
+// Where every piece is this frame, or null when nothing moves (Tetris off,
+// or the finished picture holding).
+function tetrisFrame(now) {
+  if (!ui.tetris.checked || !state.cols) {
+    tetris.plan = null;
+    return null;
+  }
+  let P = tetris.plan;
+  const byNotes = tetrisByNotes();
+  if (!P || P.cols !== state.cols || P.rows !== state.rows || P.byNotes !== byNotes || now > P.endAt) {
+    P = tetris.plan = tetrisPlan(state.cols, state.rows, now, byNotes);
+  }
+  if (P.byNotes && P.unreleased && now - midi.lastNote > 3000) {
+    // No one playing: keep a slow trickle going (about 45 s for the lot),
+    // so the picture never stalls half-built.
+    const every = Math.max(16, 45000 / P.count);
+    const n = Math.floor((now - P.trickleAt) / every);
+    if (n > 0) {
+      P.trickleAt += n * every;
+      tetrisRelease(P, (Math.random() * P.bands) | 0, n, now);
+    }
+  } else if (P.byNotes) P.trickleAt = now;
+  if (now > P.builtAt && now < P.clearAt) return null;
+  const clearing = now >= P.clearAt;
+  if (clearing) {
+    P.k.fill(1);
+    P.drop.fill(0);
+    P.turn.fill(0);
+    P.shift.fill(0);
+    // Lines flash (swell), then vanish, sweeping up from the bottom.
+    for (let y = 0; y < P.rows; y++) {
+      const q = (now - P.clearAt - ((P.rows - 1 - y) / Math.max(1, P.rows - 1)) * TETRIS_SWEEP_MS) / TETRIS_ROW_MS;
+      P.rowK[y] = q < 0 ? 1 : q < 0.35 ? 1 + q : q < 1 ? 1.35 * (1 - (q - 0.35) / 0.65) : 0;
+    }
+  } else {
+    for (let i = 0; i < P.count; i++) {
+      const left = P.landAt[i] - now;
+      P.drop[i] = P.turn[i] = P.shift[i] = 0;
+      if (left <= -TETRIS_LAND_MS) P.k[i] = 1;
+      else if (left <= 0) P.k[i] = 1 + 0.25 * (1 + left / TETRIS_LAND_MS); // just locked in
+      else if (left >= P.fallMs[i]) P.k[i] = 0; // still waiting
+      else {
+        // Falling a whole row at a time; the turns and the slide are done
+        // by halfway down, before it reaches the stack.
+        const frac = left / P.fallMs[i];
+        const q = Math.min(1, (1 - frac) * 2);
+        P.k[i] = 1;
+        P.drop[i] = Math.ceil(frac * P.dist[i]);
+        P.turn[i] = P.rot[i] - Math.min(P.rot[i], Math.floor(q * (P.rot[i] + 1)));
+        P.shift[i] = Math.round(P.slide[i] * (1 - q));
+      }
+    }
+  }
+  return { plan: P, clearing, cw: state.cellW, ch: state.cellH };
 }
 
 function onOrientation(e) {
@@ -1911,11 +2183,12 @@ function drawBeatOutlines(c, fx) {
   c.restore();
 }
 
-const soundPulses = () => ui.sound.value === 'pulse' || ui.sound.value === 'both';
+// MIDI on its own (React to sound off) pulses.
+const soundPulses = () => ui.sound.value === 'pulse' || ui.sound.value === 'both' || (midi.on && ui.sound.value === 'off');
 const soundShuffles = () => ui.sound.value === 'shuffle' || ui.sound.value === 'both';
 // Per-frame sound effects for the renderer, or null when off or silent.
 function soundFx() {
-  if (!sound.analyser || !soundPulses()) return null;
+  if ((!sound.analyser && !midi.on) || !soundPulses()) return null;
   const strength = +ui.fxStrength.value;
   if (strength <= 0) return null;
   const now = performance.now();
@@ -1935,7 +2208,7 @@ function soundFx() {
   const fx = {
     swell: strength * sound.level * 1.5,
     kick: strength * sound.kick,
-    hue: strength * sound.hue,
+    hue: strength * (sound.hue + midi.bend * 90),
     ripples,
     strength,
     cx: out.width / 2,
@@ -1953,7 +2226,7 @@ function zoomPunch(c, fx) {
 
 // Draw one glyph. Without effects it's a plain blit; with them it adds the
 // sound effects (swell, brighter cells more; passing beat waves; shake) and
-// the photo effects (twinkle glints, assemble fly-in).
+// the photo effects (twinkle glints, assemble fly-in) and the Tetris build.
 function drawCell(c, pal, e, x, y, cellW, cellH, fx, photo, bright) {
   if (!fx && !photo) {
     c.drawImage(pal.atlas, e.sx, e.sy, pal.cw, pal.ch, x * cellW, y * cellH, cellW, cellH);
@@ -2055,11 +2328,18 @@ function stopMic() {
   dbg('microphone off');
 }
 
+// What the Sound tab shows depends on the sound mode and on MIDI.
+function syncSoundUI() {
+  const off = ui.sound.value === 'off';
+  ui.meter.hidden = off && !midi.on;
+  ui.soundOpts.hidden = off && !midi.on;
+  ui.sensField.hidden = off; // sensitivity is for the microphone only
+  ui.soundDot.hidden = off && !midi.on; // a dot on the Sound tab while it's on
+}
+
 async function onSoundModeChange() {
   const mode = ui.sound.value;
-  ui.meter.hidden = mode === 'off';
-  ui.soundOpts.hidden = mode === 'off';
-  ui.soundDot.hidden = mode === 'off'; // a dot on the Sound tab while it's on
+  syncSoundUI();
   if (mode === 'off') {
     stopMic();
     return;
@@ -2073,15 +2353,23 @@ async function onSoundModeChange() {
   } catch (err) {
     dbg('microphone failed:', err.name, err.message);
     ui.sound.value = 'off';
-    ui.meter.hidden = true;
-    ui.soundOpts.hidden = true;
+    syncSoundUI();
     toast(err.name === 'NotAllowedError' ? 'Microphone permission was denied' : 'Couldn’t start the microphone');
   }
 }
 
 // Called every frame: measure loudness, smooth it, and detect beats.
 function updateSound() {
-  if (!sound.analyser) return;
+  if (midi.on) updateMidi();
+  if (!sound.analyser) {
+    if (!midi.on) return;
+    // MIDI only: notes set the kick and hue, held notes the level.
+    sound.kick *= 0.86;
+    sound.hue *= 0.96;
+    sound.level = midi.level;
+    ui.meterFill.style.transform = `scaleX(${sound.level.toFixed(3)})`;
+    return;
+  }
   if (sound.ctx.state === 'suspended') return; // resumed on the next tap
   if (sound.analyser.getFloatTimeDomainData) {
     sound.analyser.getFloatTimeDomainData(sound.buf);
@@ -2104,6 +2392,7 @@ function updateSound() {
   const target = Math.min(1, Math.pow(g * (0.5 + sens * 0.35), 0.6));
   // Fast attack, quick release, so it tracks every syllable and drum hit.
   sound.level = target > sound.level ? sound.level + (target - sound.level) * 0.75 : sound.level * 0.82;
+  if (midi.on) sound.level = Math.max(sound.level, midi.level);
 
   // Beat: a jump above the recent average loudness.
   const now = performance.now();
@@ -2112,19 +2401,127 @@ function updateSound() {
   sound.kick *= 0.86;
   sound.hue *= 0.96;
   if (isBeat) {
-    sound.lastBeat = now;
     sound.kick = 1;
     sound.hue += (Math.random() < 0.5 ? -1 : 1) * (50 + Math.random() * 60);
-    if (soundPulses()) spawnWave(now);
-    ui.meter.classList.remove('beat');
-    void ui.meter.offsetWidth;
-    ui.meter.classList.add('beat');
-    if (soundShuffles() && hasSource() && !state.paused && now - sound.lastShuffle > 600) {
-      sound.lastShuffle = now;
-      randomize({ quiet: true, keepDetail: true });
-    }
+    onBeat(now);
   }
   ui.meterFill.style.transform = `scaleX(${sound.level.toFixed(3)})`;
+}
+
+// What every beat does, heard or played: a wave, the meter flash, a shuffle.
+function onBeat(now) {
+  sound.lastBeat = now;
+  if (soundPulses()) spawnWave(now);
+  ui.meter.classList.remove('beat');
+  void ui.meter.offsetWidth;
+  ui.meter.classList.add('beat');
+  if (soundShuffles() && hasSource() && !state.paused && now - sound.lastShuffle > 600) {
+    sound.lastShuffle = now;
+    randomize({ quiet: true, keepDetail: true });
+  }
+}
+
+// ---- MIDI ------------------------------------------------------------------
+// A keyboard, drum pads or any app sending MIDI (Web MIDI: Chrome, Edge and
+// Firefox; Safari doesn't have it). Each note hits like a beat, as hard as
+// it was played, its pitch nudging the hues; held notes swell the glyphs,
+// the pitch bend wheel shifts the hues and the mod wheel adds swell. With
+// Tetris on, notes drop the pieces.
+
+const midi = {
+  on: false,
+  access: null,
+  devices: 0,
+  held: new Map(), // note -> velocity 0..1
+  level: 0,
+  bend: 0, // -1..1
+  mod: 0, // 0..1
+  lastNote: 0,
+  lo: 60, // the range of notes played so far, for Tetris bands
+  hi: 72,
+};
+
+function updateMidi() {
+  let target = midi.mod * 0.8;
+  for (const v of midi.held.values()) target = Math.max(target, 0.35 + 0.65 * v);
+  midi.level = target > midi.level ? midi.level + (target - midi.level) * 0.6 : midi.level * 0.9;
+}
+
+function onMidiMessage(e) {
+  const [status, a = 0, b = 0] = e.data;
+  const type = status & 0xf0;
+  const now = performance.now();
+  if (type === 0x90 && b > 0) {
+    const vel = b / 127;
+    midi.held.set(a, vel);
+    midi.lastNote = now;
+    midi.lo = Math.min(midi.lo, a);
+    midi.hi = Math.max(midi.hi, a);
+    sound.kick = Math.max(sound.kick, 0.4 + 0.6 * vel);
+    sound.hue += ((a % 12) - 5.5) * 12 * (0.5 + vel); // each pitch its own nudge
+    onBeat(now);
+    tetrisNote(a, vel, now);
+  } else if (type === 0x80 || type === 0x90) {
+    midi.held.delete(a);
+  } else if (type === 0xb0) {
+    if (a === 1) midi.mod = b / 127; // mod wheel
+    if (a === 120 || a === 123) midi.held.clear(); // all sound / notes off
+  } else if (type === 0xe0) {
+    midi.bend = (((b << 7) | a) - 8192) / 8192;
+  }
+}
+
+function connectMidiInputs() {
+  const names = [];
+  for (const input of midi.access.inputs.values()) {
+    input.onmidimessage = onMidiMessage;
+    if (input.state !== 'disconnected') names.push(input.name || 'MIDI device');
+  }
+  if (names.length && !midi.devices) toast(`🎹 ${names[0]} connected`);
+  midi.devices = names.length;
+  ui.midiStatus.textContent = names.length
+    ? `🎹 Listening to ${names.join(', ')}. Play away!`
+    : 'No MIDI device found. Plug one in (or turn on a virtual MIDI port) and it connects by itself.';
+}
+
+async function enableMidi() {
+  if (!navigator.requestMIDIAccess) {
+    ui.midi.checked = false;
+    toast('MIDI needs Chrome, Edge or Firefox on a computer');
+    return;
+  }
+  try {
+    midi.access = midi.access || (await navigator.requestMIDIAccess());
+  } catch (err) {
+    dbg('MIDI failed:', err.name, err.message);
+    ui.midi.checked = false;
+    toast(err.name === 'SecurityError' || err.name === 'NotAllowedError' ? 'MIDI permission was denied' : 'Couldn’t start MIDI');
+    return;
+  }
+  if (!ui.midi.checked) return; // turned off while the permission prompt was up
+  midi.on = true;
+  midi.access.onstatechange = connectMidiInputs;
+  connectMidiInputs();
+  syncSoundUI();
+  dbg(`MIDI on, ${midi.devices} input(s)`);
+}
+
+function disableMidi() {
+  midi.on = false;
+  midi.devices = 0;
+  midi.held.clear();
+  midi.level = midi.bend = midi.mod = 0;
+  if (midi.access) {
+    midi.access.onstatechange = null;
+    for (const input of midi.access.inputs.values()) input.onmidimessage = null;
+  }
+  if (!sound.analyser) {
+    sound.level = sound.kick = sound.hue = 0;
+    sound.ripples = [];
+    ui.meterFill.style.transform = 'scaleX(0)';
+  }
+  ui.midiStatus.textContent = 'Play a keyboard or drum pads: notes hit like beats, and with 🧱 Tetris on they drop the pieces (low notes on the left, high notes on the right).';
+  syncSoundUI();
 }
 
 // iOS may leave the audio context suspended until a tap; resume on any tap.
@@ -2451,6 +2848,10 @@ for (const b of ui.sourceButtons) {
 ui.startFile.addEventListener('click', chooseFile);
 ui.startScreen.addEventListener('click', startScreen);
 ui.assemble.addEventListener('click', startAssemble);
+ui.tetris.addEventListener('change', () => {
+  tetris.plan = null;
+  if (ui.tetris.checked) toast('🧱 Tetris: watch the pieces build the picture');
+});
 ui.tilt.addEventListener('change', () => {
   ui.tiltOpts.hidden = !ui.tilt.checked;
   if (ui.tilt.checked) enableTilt();
@@ -2500,6 +2901,12 @@ ui.snap.addEventListener('click', snapshot);
 ui.copy.addEventListener('click', copyText);
 ui.random.addEventListener('click', () => randomize());
 ui.sound.addEventListener('change', onSoundModeChange);
+ui.midi.addEventListener('change', () => (ui.midi.checked ? enableMidi() : disableMidi()));
+ui.midi.checked = false; // MIDI starts off, even if the browser restored the box
+if (!navigator.requestMIDIAccess) {
+  ui.midi.disabled = true;
+  ui.midiStatus.textContent = 'MIDI works in Chrome, Edge and Firefox on a computer. This browser doesn’t support it.';
+}
 const onBeatShapeChange = () => {
   const off = ui.beatShape.value === 'off';
   ui.beatOutlineRow.hidden = off; // outlines only apply to shapes
@@ -2535,6 +2942,7 @@ document.addEventListener('keydown', (e) => {
   if (e.key === 'r') ui.record.click();
   if (e.key === 'd') randomize();
   if (e.key === 'f') switchCamera();
+  if (e.key === 't') ui.tetris.click();
   if (e.key === 'Escape' && !ui.posterSheet.hidden) closePoster();
   else if (e.key === 'Escape' && !ui.player.hidden) closePlayer();
   else if (e.key === 'Escape' && !ui.clip.hidden) closeClip();
@@ -2548,5 +2956,5 @@ try {
 } catch (err) {
   ui.error.textContent = `Setup failed: ${err.message}`;
 }
-window.emojiFiedReady = '25';
-dbg('app.js v25 initialised');
+window.emojiFiedReady = '27';
+dbg('app.js v27 initialised');
