@@ -15,7 +15,7 @@
   <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🤩</text></svg>" />
   <link rel="preload" href="fonts/bricolage-grotesque.woff2" as="font" type="font/woff2" crossorigin />
   <link rel="preload" href="fonts/dm-mono-500.woff2" as="font" type="font/woff2" crossorigin />
-  <link rel="stylesheet" href="style.css?v=33" />
+  <link rel="stylesheet" href="style.css?v=34" />
 </head>
 <body>
   <header>
@@ -60,7 +60,7 @@
           </div>
           <p class="status" id="status" aria-live="polite"></p>
           <p class="error" id="error" role="alert"></p>
-          <p class="note">Everything runs in your browser. No video leaves your device. <span class="version">v33</span></p>
+          <p class="note">Everything runs in your browser. No video leaves your device. <span class="version">v34</span></p>
         </div>
       </div>
     </div>
@@ -147,6 +147,13 @@
 
       <!-- Look: how the picture is drawn -->
       <div class="tab-panel" data-panel="look" role="tabpanel">
+        <div class="sec" id="looksSec">
+          <div class="sec-head">
+            <span class="field-label">Try a look</span>
+            <span class="hint">tap to try · keep it in 🎬 Live</span>
+          </div>
+          <div class="looks" id="looks"></div>
+        </div>
         <div class="sec">
           <label class="field" id="matchField">
             <span>Match by</span>
@@ -502,7 +509,7 @@
             function () { var r = document.createRange(); r.selectNodeContents(pre); var s = getSelection(); s.removeAllRanges(); s.addRange(r); }
           );
         });
-        dbg('page v33', navigator.userAgent);
+        dbg('page v34', navigator.userAgent);
         dbg('secure=' + window.isSecureContext, 'mediaDevices=' + !!navigator.mediaDevices,
             'getUserMedia=' + !!(navigator.mediaDevices && navigator.mediaDevices.getUserMedia));
         if (navigator.permissions && navigator.permissions.query) {
@@ -523,11 +530,11 @@
       window.addEventListener('unhandledrejection', function (e) { dbg('REJECTION', String(e.reason)); show((e.reason && e.reason.message) || String(e.reason)); });
       window.addEventListener('load', function () {
         dbg('load event, app ready = ' + window.emojiFiedReady);
-        if (window.emojiFiedReady !== '33') show('an old or broken copy of the app loaded. Close this tab and open the link again.');
+        if (window.emojiFiedReady !== '34') show('an old or broken copy of the app loaded. Close this tab and open the link again.');
       });
     })();
   </script>
-  <script src="gif.js?v=33"></script>
-  <script src="app.js?v=33"></script>
+  <script src="gif.js?v=34"></script>
+  <script src="app.js?v=34"></script>
 </body>
 </html>

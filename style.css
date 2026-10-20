@@ -969,6 +969,43 @@ input[type="range"]:focus-visible::-webkit-slider-thumb { box-shadow: 0 0 0 2px 
 .scene .ico { position: absolute; top: 5px; right: 7px; font-size: 19px; line-height: 1; }
 .scene.has-thumb .ico { font-size: 15px; opacity: 0.9; }
 .sec-actions { display: inline-flex; gap: 14px; }
+
+/* Try a look: rows of example cards that scroll sideways. */
+.looks { display: grid; gap: 8px; }
+.look-group { display: grid; gap: 5px; min-width: 0; }
+.look-group-title { font: 500 10px var(--mono); letter-spacing: 0.1em; text-transform: uppercase; color: var(--faint); }
+.look-strip {
+  display: grid;
+  grid-auto-flow: column;
+  grid-auto-columns: 84px;
+  gap: 6px;
+  overflow-x: auto;
+  scroll-snap-type: x proximity;
+  padding: 2px 2px 8px;
+  margin: 0 -2px;
+  scrollbar-width: thin;
+  scrollbar-color: var(--line-2) transparent;
+  -webkit-mask-image: linear-gradient(90deg, #000 88%, transparent);
+  mask-image: linear-gradient(90deg, #000 88%, transparent);
+}
+.look-strip::-webkit-scrollbar { height: 4px; }
+.look-strip::-webkit-scrollbar-thumb { background: var(--line-2); border-radius: 4px; }
+.look-card {
+  scroll-snap-align: start;
+  display: grid;
+  justify-items: start;
+  align-content: space-between;
+  gap: 4px;
+  height: 66px;
+  padding: 7px 8px;
+  text-align: left;
+  background:
+    radial-gradient(130% 110% at 100% 0%, color-mix(in srgb, var(--tint) 45%, transparent), transparent 64%),
+    linear-gradient(180deg, var(--key-hi), var(--key));
+}
+.look-card .ico { font-size: 20px; line-height: 1; }
+.look-card .name { font-size: 11.5px; font-weight: 600; line-height: 1.15; }
+.look-card.on { border-color: var(--tint); box-shadow: var(--lip), 0 0 0 1px var(--tint), 0 0 14px color-mix(in srgb, var(--tint) 50%, transparent); }
 .scene.empty .what { color: var(--faint); }
 .scene.current { border-color: var(--tab); box-shadow: var(--lip), 0 0 0 1px var(--tab), 0 0 14px rgba(255, 111, 145, 0.35); }
 .scenes.saving .scene { border-style: dashed; border-color: var(--tab); }

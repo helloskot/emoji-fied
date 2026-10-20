@@ -2136,6 +2136,7 @@ const between = (lo, hi) => lo + Math.random() * (hi - lo);
 // Pick a random look. Ranges are kept to values that look good and stay
 // fast on phones (detail is capped well below the slider's maximum).
 function randomize({ quiet = false, keepDetail = false } = {}) {
+  forgetTried();
   ui.random.classList.remove('spin');
   void ui.random.offsetWidth; // restart the animation
   ui.random.classList.add('spin');
@@ -2959,7 +2960,7 @@ function openOutput() {
     show.win.focus();
     return;
   }
-  const win = window.open('output.html?v=33', 'emojiFiedOutput', 'popup,width=960,height=540');
+  const win = window.open('output.html?v=34', 'emojiFiedOutput', 'popup,width=960,height=540');
   if (!win) {
     toast('Allow pop-ups for this site to open the output window');
     return;
@@ -3091,8 +3092,16 @@ function defaultScene() {
   return scene;
 }
 
+// The look on screen is no longer the example that was tried.
+function forgetTried() {
+  if (!show.trying) return;
+  show.trying = null;
+  renderLooks();
+}
+
 function safeLook() {
   releasePunches(true);
+  forgetTried();
   applyScene(defaultScene());
   show.scene = 0;
   renderScenes();
@@ -3646,6 +3655,8 @@ function sceneThumb() {
 
 function captureScene() {
   const scene = { label: describeLook(), thumb: sceneThumb() };
+  const ex = show.trying;
+  if (ex) Object.assign(scene, { label: ex.label, icon: ex.icon, tint: ex.tint, example: ex.id });
   for (const [k, el] of Object.entries(sceneFields())) scene[k] = el.type === 'checkbox' ? el.checked : el.value;
   if (punch.crunchCols) scene.cols = String(punch.crunchCols); // the detail without Crunch held
   return scene;
@@ -3670,16 +3681,44 @@ function applyScene(scene) {
 // Example scenes: a starter set for the slots. Each is the default look
 // with a few changes; it gets a real thumbnail the first time it plays.
 const EXAMPLE_SCENES = [
-  { id: 'candy', icon: '🌈', label: 'Candy Pop', tint: '#ff6fae', look: { style: 'emoji:rainbow', cols: '56', sat: '1.7', contrast: '1.35', beatShape: 'mix' } },
-  { id: 'matrix', icon: '💚', label: 'Matrix', tint: '#39ff7a', look: { style: 'text:katakana', ink: '#39ff7a', cols: '96', contrast: '1.7', bright: '0.04' } },
-  { id: 'love', icon: '💖', label: 'Love Bomb', tint: '#ff4f7b', look: { style: 'emoji:hearts', cols: '44', sat: '1.5', contrast: '1.3', beatShape: 'heart' } },
-  { id: 'skulls', icon: '💀', label: 'Skull Rave', tint: '#c38bff', look: { style: 'skull', ink: '#ff4fd8', cols: '72', contrast: '1.6', beatShape: 'star' } },
-  { id: 'tetris', icon: '🧱', label: 'Tetris Party', tint: '#ffd23f', look: { style: 'emoji:everything', cols: '40', sat: '1.3', tetris: true } },
-  { id: 'ghost', icon: '👻', label: 'Braille Ghost', tint: '#e9e3d6', look: { style: 'braille', ink: '#f2f2f2', cols: '130', contrast: '1.9', shadows: '-0.2' } },
-  { id: 'amber', icon: '📟', label: 'Amber Terminal', tint: '#ffb000', look: { style: 'text:detailed', ink: '#ffb000', cols: '120', contrast: '1.5' } },
-  { id: 'snack', icon: '🍩', label: 'Snack Attack', tint: '#ff9a3d', look: { style: 'emoji:food', cols: '52', sat: '1.4', highlights: '0.1' } },
-  { id: 'chaos', icon: '🌀', label: 'Chaos Mode', tint: '#5cb8ff', look: { style: 'emoji:faces', cols: '60', sat: '1.6', beatShape: 'mix', beatShuffle: '4' } },
+  // The starter set: the nine slots on a first visit (and ✨ Examples).
+  { id: 'candy', starter: true, group: 'Emoji', icon: '🌈', label: 'Candy Pop', tint: '#ff6fae', look: { style: 'emoji:rainbow', cols: '56', sat: '1.7', contrast: '1.35', beatShape: 'mix' } },
+  { id: 'matrix', starter: true, group: 'Text & code', icon: '💚', label: 'Matrix', tint: '#39ff7a', look: { style: 'text:katakana', ink: '#39ff7a', cols: '96', contrast: '1.7', bright: '0.04' } },
+  { id: 'love', starter: true, group: 'Emoji', icon: '💖', label: 'Love Bomb', tint: '#ff4f7b', look: { style: 'emoji:hearts', cols: '44', sat: '1.5', contrast: '1.3', beatShape: 'heart' } },
+  { id: 'skulls', starter: true, group: 'Party', icon: '💀', label: 'Skull Rave', tint: '#c38bff', look: { style: 'skull', ink: '#ff4fd8', cols: '72', contrast: '1.6', beatShape: 'star' } },
+  { id: 'tetris', starter: true, group: 'Party', icon: '🧱', label: 'Tetris Party', tint: '#ffd23f', look: { style: 'emoji:everything', cols: '40', sat: '1.3', tetris: true } },
+  { id: 'ghost', starter: true, group: 'Fine detail', icon: '👻', label: 'Braille Ghost', tint: '#e9e3d6', look: { style: 'braille', ink: '#f2f2f2', cols: '130', contrast: '1.9', shadows: '-0.2' } },
+  { id: 'amber', starter: true, group: 'Text & code', icon: '📟', label: 'Amber Terminal', tint: '#ffb000', look: { style: 'text:detailed', ink: '#ffb000', cols: '120', contrast: '1.5' } },
+  { id: 'snack', starter: true, group: 'Emoji', icon: '🍩', label: 'Snack Attack', tint: '#ff9a3d', look: { style: 'emoji:food', cols: '52', sat: '1.4', highlights: '0.1' } },
+  { id: 'chaos', starter: true, group: 'Party', icon: '🌀', label: 'Chaos Mode', tint: '#5cb8ff', look: { style: 'emoji:faces', cols: '60', sat: '1.6', beatShape: 'mix', beatShuffle: '4' } },
+  // The rest of the library (🎨 Look → Try a look).
+  { id: 'zoo', group: 'Emoji', icon: '🐾', label: 'Zoo', tint: '#ffb000', look: { style: 'emoji:animals', cols: '50', sat: '1.3' } },
+  { id: 'forest', group: 'Emoji', icon: '🌿', label: 'Forest', tint: '#43d17a', look: { style: 'emoji:nature', cols: '64', sat: '1.25', contrast: '1.3' } },
+  { id: 'faces', group: 'Emoji', icon: '🤡', label: 'Face Wall', tint: '#ffd23f', look: { style: 'emoji:faces', cols: '36', sat: '1.3' } },
+  { id: 'frog', group: 'Emoji', icon: '🐸', label: 'Frog Pond', tint: '#6fe3a5', look: { style: 'custom', custom: '🐸🍀💚🌿🟩', cols: '60', sat: '1.4' } },
+  { id: 'sea', group: 'Emoji', icon: '🌊', label: 'Deep Sea', tint: '#3d8bff', look: { style: 'custom', custom: '🌊🐟🐠🐳💧💙', cols: '64', contrast: '1.3' } },
+  { id: 'inferno', group: 'Emoji', icon: '🔥', label: 'Inferno', tint: '#ff6a3d', look: { style: 'custom', custom: '🔥🧡❤️💛🌋', cols: '56', contrast: '1.5', sat: '1.5', beatShape: 'sweep' } },
+  { id: 'sakura', group: 'Emoji', icon: '🌸', label: 'Sakura', tint: '#ffb3d1', look: { style: 'custom', custom: '🌸🌷💮🎀💗', cols: '60', bright: '0.05', sat: '1.2' } },
+  { id: 'galaxy', group: 'Emoji', icon: '🪐', label: 'Galaxy', tint: '#8f7bff', look: { style: 'custom', custom: '✨⭐🌟💫🌌🪐', cols: '72', contrast: '1.6' } },
+  { id: 'sweet', group: 'Emoji', icon: '🍭', label: 'Sweet Tooth', tint: '#ff9ad1', look: { style: 'custom', custom: '🍬🍭🍩🧁🍰🍫', cols: '56', sat: '1.3' } },
+  { id: 'sun', group: 'Emoji', icon: '🌻', label: 'Sunburst', tint: '#ffd23f', look: { style: 'custom', custom: '🌞☀️🌻🟡🌼', cols: '52', bright: '0.05' } },
+  { id: 'snow', group: 'Emoji', icon: '❄️', label: 'Snow Day', tint: '#cfe9ff', look: { style: 'custom', custom: '❄️⛄🤍💙🧊', cols: '64', contrast: '1.3' } },
+  { id: 'arcade', group: 'Emoji', icon: '👾', label: 'Arcade', tint: '#5cb8ff', look: { style: 'custom', custom: '👾🕹️🟦🟥🟨🟩', cols: '40', contrast: '1.5' } },
+  { id: 'monitor', group: 'Text & code', icon: '💾', label: 'Old Monitor', tint: '#39ff7a', look: { style: 'text:ascii', ink: '#39ff7a', cols: '80', contrast: '1.5', bright: '0.1' } },
+  { id: 'ice', group: 'Text & code', icon: '🧊', label: 'Ice Blocks', tint: '#5ec8ff', look: { style: 'text:blocks', ink: '#5ec8ff', cols: '90', contrast: '1.6' } },
+  { id: 'stars', group: 'Text & code', icon: '⭐', label: 'Starfield', tint: '#e9e3d6', look: { style: 'text:stars', ink: '#f2f2f2', cols: '100', contrast: '1.6', bright: '0.12' } },
+  { id: 'halftone', group: 'Text & code', icon: '🔵', label: 'Halftone', tint: '#ff9a3d', look: { style: 'text:shapes', cols: '80', contrast: '1.4', sat: '1.5' } },
+  { id: 'math', group: 'Text & code', icon: '🧮', label: 'Math Class', tint: '#c38bff', look: { style: 'text:math', ink: '#f2f2f2', cols: '96', contrast: '1.5', bright: '0.08' } },
+  { id: 'noir', group: 'Text & code', icon: '🖤', label: 'Noir', tint: '#9a968c', look: { style: 'text:detailed', ink: '#f2f2f2', cols: '120', sat: '0', contrast: '1.9', shadows: '-0.3' } },
+  { id: 'vapor', group: 'Text & code', icon: '💜', label: 'Vapor', tint: '#ff4fd8', look: { style: 'text:katakana', ink: '#ff4fd8', cols: '80', contrast: '1.8', bright: '0.12', beatShape: 'hexagon' } },
+  { id: 'news', group: 'Fine detail', icon: '📰', label: 'Newsprint', tint: '#e9e3d6', look: { style: 'braille', ink: '#f2f2f2', cols: '170', contrast: '1.6' } },
+  { id: 'xray', group: 'Fine detail', icon: '🩻', label: 'X-Ray', tint: '#5ec8ff', look: { style: 'braille', ink: '#5ec8ff', cols: '120', contrast: '1.8', invert: true } },
+  { id: 'hypno', group: 'Party', icon: '😵‍💫', label: 'Hypno', tint: '#ff6fae', look: { style: 'emoji:rainbow', cols: '48', sat: '1.8', beatShape: 'circle' } },
+  { id: 'party', group: 'Party', icon: '🎉', label: 'Party Starter', tint: '#ffd23f', look: { style: 'emoji:everything', cols: '56', sat: '1.4', beatShape: 'mix', beatShuffle: '8' } },
+  { id: 'bricks', group: 'Party', icon: '🌈', label: 'Rainbow Bricks', tint: '#ff6f91', look: { style: 'emoji:rainbow', cols: '36', tetris: true } },
 ];
+const STARTER_SCENES = EXAMPLE_SCENES.filter((ex) => ex.starter);
+const EXAMPLE_GROUPS = ['Emoji', 'Text & code', 'Fine detail', 'Party'];
 
 function exampleScene(ex) {
   return { ...defaultScene(), ...ex.look, label: ex.label, icon: ex.icon, tint: ex.tint, example: ex.id };
@@ -3695,16 +3734,71 @@ function loadScenes() {
   }
   // First visit: start with the examples.
   if (saved === null) {
-    EXAMPLE_SCENES.forEach((ex, i) => (show.scenes[i + 1] = exampleScene(ex)));
+    STARTER_SCENES.forEach((ex, i) => (show.scenes[i + 1] = exampleScene(ex)));
     storeScenes(true);
   }
+}
+
+// ---- Try a look: the example library on the Look tab ---------------------------
+// Tap a card to try the look live; saving it to a slot (🎬 Live) keeps its
+// name and emoji.
+
+function tryExample(ex) {
+  applyScene(exampleScene(ex));
+  show.trying = ex;
+  show.scene = 0;
+  renderScenes();
+  renderLooks();
+  liveToast(`✨ ${ex.icon} ${ex.label}`);
+  dbg(`example tried: ${ex.id}`);
+}
+
+function renderLooks() {
+  const box = document.getElementById('looks');
+  box.replaceChildren(
+    ...EXAMPLE_GROUPS.map((group) => {
+      const wrap = document.createElement('div');
+      wrap.className = 'look-group';
+      const title = document.createElement('span');
+      title.className = 'look-group-title';
+      title.textContent = group;
+      const strip = document.createElement('div');
+      strip.className = 'look-strip';
+      for (const ex of EXAMPLE_SCENES.filter((e) => e.group === group)) {
+        const b = document.createElement('button');
+        b.type = 'button';
+        b.className = `look-card${show.trying === ex ? ' on' : ''}`;
+        b.style.setProperty('--tint', ex.tint);
+        b.title = `Try ${ex.label}`;
+        const ico = document.createElement('span');
+        ico.className = 'ico';
+        ico.textContent = ex.icon;
+        const name = document.createElement('span');
+        name.className = 'name';
+        name.textContent = ex.label;
+        b.append(ico, name);
+        b.addEventListener('click', () => tryExample(ex));
+        strip.append(b);
+      }
+      // A mouse wheel scrolls the strip sideways.
+      strip.addEventListener('wheel', (e) => {
+        if (Math.abs(e.deltaY) <= Math.abs(e.deltaX) || strip.scrollWidth <= strip.clientWidth) return;
+        const max = strip.scrollWidth - strip.clientWidth;
+        if ((e.deltaY < 0 && strip.scrollLeft <= 0) || (e.deltaY > 0 && strip.scrollLeft >= max)) return; // let the page scroll on
+        e.preventDefault();
+        strip.scrollLeft += e.deltaY;
+      }, { passive: false });
+      wrap.append(title, strip);
+      return wrap;
+    })
+  );
 }
 
 // Put the examples into the empty slots (or, with none empty, offer to
 // swap every slot for them).
 function loadExamples() {
   const have = new Set(Object.values(show.scenes).map((sc) => sc.example).filter(Boolean));
-  const todo = EXAMPLE_SCENES.filter((ex) => !have.has(ex.id));
+  const todo = STARTER_SCENES.filter((ex) => !have.has(ex.id));
   const empty = Array.from({ length: 9 }, (_, i) => i + 1).filter((n) => !show.scenes[n]);
   if (!todo.length && !empty.length) {
     toast('All the examples are already in your slots');
@@ -3713,9 +3807,9 @@ function loadExamples() {
   if (!empty.length) {
     if (!confirm('Every slot is full. Replace all nine scenes with the examples?')) return;
     show.scenes = {};
-    EXAMPLE_SCENES.forEach((ex, i) => (show.scenes[i + 1] = exampleScene(ex)));
+    STARTER_SCENES.forEach((ex, i) => (show.scenes[i + 1] = exampleScene(ex)));
   } else {
-    (todo.length ? todo : EXAMPLE_SCENES).slice(0, empty.length).forEach((ex, i) => (show.scenes[empty[i]] = exampleScene(ex)));
+    (todo.length ? todo : STARTER_SCENES).slice(0, empty.length).forEach((ex, i) => (show.scenes[empty[i]] = exampleScene(ex)));
   }
   storeScenes();
   renderScenes();
@@ -3732,6 +3826,7 @@ function storeScenes(quiet = false) {
 
 function recallScene(n) {
   const scene = show.scenes[n];
+  if (scene) forgetTried();
   if (!scene) {
     liveToast(`Scene ${n} is empty: Shift + ${n} saves the current look there`);
     return;
@@ -3826,6 +3921,7 @@ ui.sceneSave.addEventListener('click', () => setSaving(!show.saving));
 document.getElementById('examplesBtn').addEventListener('click', loadExamples);
 loadScenes();
 renderScenes();
+renderLooks();
 buildPunchButtons();
 window.addEventListener('blur', () => releasePunches());
 
@@ -3925,7 +4021,10 @@ ui.start.addEventListener('click', () => {
   dbg('start button click handler, onclick set=' + !!ui.start.onclick);
   if (!ui.start.onclick) useCamera();
 });
-ui.style.addEventListener('change', applyStyle);
+ui.style.addEventListener('change', () => {
+  forgetTried();
+  applyStyle();
+});
 ui.custom.addEventListener('input', () => {
   clearTimeout(ui.custom._t);
   ui.custom._t = setTimeout(applyStyle, 250);
@@ -4155,5 +4254,5 @@ try {
 } catch (err) {
   ui.error.textContent = `Setup failed: ${err.message}`;
 }
-window.emojiFiedReady = '33';
-dbg('app.js v33 initialised');
+window.emojiFiedReady = '34';
+dbg('app.js v34 initialised');

@@ -52,7 +52,10 @@ the stream. Sharing the tab gets the same result.
 A toolbar (⏺ Record · 📸 Photo · ⏸ Pause · ⛶ Full · 📺 TV · ⋯ More), the
 source, style (🎲 randomizes it) and detail, then four tabs:
 
-- **🎨 Look**: match by colour or brightness (or the ink colour for unicode),
+- **🎨 Look**: **Try a look**, a library of 33 example looks in four rows
+  that scroll sideways (Emoji, Text & code, Fine detail, Party): tap one to
+  try it live, then save it to a scene slot (🎬 Live) to keep it, name and
+  emoji included. Then match by colour or brightness (or the ink colour for unicode),
   adjustments (contrast, brightness, saturation, shadows, highlights, with
   reset), mirror, invert, blank darks and **🧱 Tetris build**.
 - **🎵 Beat**: what drives the effects, and what a beat does.
@@ -92,7 +95,8 @@ source, style (🎲 randomizes it) and detail, then four tabs:
     (🌈 Candy Pop, 💚 Matrix, 💖 Love Bomb, 💀 Skull Rave, 🧱 Tetris Party,
     👻 Braille Ghost, 📟 Amber Terminal, 🍩 Snack Attack, 🌀 Chaos Mode),
     shown as colour cards until they've played once; **✨ Examples** puts them
-    back into empty slots without touching your own.
+    back into empty slots without touching your own. 24 more are in 🎨 Look →
+    Try a look.
   - **MIDI controller** (MIDI learn): click *Learn…*, a slider or button
     (scenes, panic, punch-ins, Tap, 🎲, Tetris), then move a knob or hit a
     pad. Punch-ins last as long as the pad is held; mapped notes don't also
