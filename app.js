@@ -2956,5 +2956,5 @@ try {
 } catch (err) {
   ui.error.textContent = `Setup failed: ${err.message}`;
 }
-window.emojiFiedReady = '27';
-dbg('app.js v27 initialised');
+window.emojiFiedReady = '28';
+dbg('app.js v28 initialised');
