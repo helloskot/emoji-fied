@@ -87,7 +87,12 @@ source, style (🎲 randomizes it) and detail, then four tabs:
     `V` 🧊 crunch. The keys mirror the pads; `Shift` (or Shift-click) locks
     one on. They stack, and never touch posters.
   - **Scenes**: nine slots for whole looks; `1`–`9` switches, `Shift` +
-    `1`–`9` saves (or click an empty slot). Kept in the browser.
+    `1`–`9` saves (or click an empty slot). Kept in the browser, each with a
+    thumbnail of the look. A first visit starts with nine **example scenes**
+    (🌈 Candy Pop, 💚 Matrix, 💖 Love Bomb, 💀 Skull Rave, 🧱 Tetris Party,
+    👻 Braille Ghost, 📟 Amber Terminal, 🍩 Snack Attack, 🌀 Chaos Mode),
+    shown as colour cards until they've played once; **✨ Examples** puts them
+    back into empty slots without touching your own.
   - **MIDI controller** (MIDI learn): click *Learn…*, a slider or button
     (scenes, panic, punch-ins, Tap, 🎲, Tetris), then move a knob or hit a
     pad. Punch-ins last as long as the pad is held; mapped notes don't also
