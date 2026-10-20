@@ -556,7 +556,6 @@ button:disabled { opacity: 0.5; cursor: default; }
 .live-dot { background: #d92d3a; }
 .panic { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px; }
 .panic button { display: grid; justify-items: center; gap: 3px; padding: 8px 4px; font-size: 13px; }
-@media (hover: none) { .panic kbd { display: none; } } /* no keyboard to press */
 .panic button[aria-pressed="true"] { background: #d92d3a; border-color: #d92d3a; color: #fff; }
 kbd {
   display: inline-block;
@@ -603,4 +602,42 @@ kbd {
 .punch.on { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); }
 .punch.on .lbl, .punch.on kbd { color: var(--accent-ink); border-color: rgba(26, 20, 0, 0.4); }
 .punch.latched { box-shadow: inset 0 0 0 2px #fff; }
-@media (hover: none) { .punch kbd { display: none; } }
+
+/* Tempo */
+.tempo-row { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+.tempo-row button { padding: 8px 14px; }
+.tempo-row button.hit { border-color: var(--accent); }
+.tempo-sync { display: flex; align-items: center; gap: 6px; cursor: pointer; margin-left: auto; }
+.tempo-sync input { accent-color: var(--accent); width: 16px; height: 16px; }
+.tempo-read { font-variant-numeric: tabular-nums; font-weight: 600; font-size: 13px; }
+.tempo-opts { display: grid; gap: 8px; }
+.tempo-opts[hidden] { display: none; }
+.tempo-opts .toggles { align-items: center; }
+.tempo-opts select { width: auto; padding: 4px 8px; }
+.beat-dots { display: flex; gap: 5px; }
+.beat-dots i { width: 10px; height: 10px; border-radius: 50%; background: var(--line); }
+.beat-dots i.on { background: var(--accent); }
+.beat-dots i.on:first-child { background: #d92d3a; }
+
+/* MIDI learn: learnable controls get a dashed outline; the one waiting
+   for a knob or pad pulses. */
+body.learning [data-learn] { outline: 2px dashed var(--accent); outline-offset: 2px; cursor: crosshair; }
+body.learning [data-learn].learn-pending { outline-style: solid; animation: learn-pulse 0.7s ease-in-out infinite alternate; }
+@keyframes learn-pulse { to { outline-color: transparent; } }
+#learnBtn[aria-pressed="true"] { font-weight: 600; }
+.midi-map { display: grid; gap: 4px; }
+.map-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 4px 4px 4px 10px;
+  border-radius: 8px;
+  background: var(--panel-2);
+  font-size: 13px;
+}
+.map-row .from { color: var(--muted); }
+.map-row button { padding: 2px 9px; font-size: 13px; }
+
+/* Touch screens: there's no keyboard to press, so no key hints. */
+@media (hover: none) { kbd { display: none; } }

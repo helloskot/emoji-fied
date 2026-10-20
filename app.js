@@ -139,6 +139,19 @@ const ui = {
   scenes: $('#scenes'),
   scenesHint: $('#scenesHint'),
   punches: $('#punches'),
+  tempoRead: $('#tempoRead'),
+  tapBtn: $('#tapBtn'),
+  beatDots: [...document.querySelectorAll('#beatDots i')],
+  tempoSync: $('#tempoSync'),
+  tempoOpts: $('#tempoOpts'),
+  tempoFlash: $('#tempoFlash'),
+  tempoTetris: $('#tempoTetris'),
+  tempoShuffle: $('#tempoShuffle'),
+  tempoEvery: $('#tempoEvery'),
+  learnHead: $('#learnHead'),
+  learnBtn: $('#learnBtn'),
+  midiMap: $('#midiMap'),
+  learnHint: $('#learnHint'),
   punchHint: $('#punchHint'),
   blankField: $('#blankField'),
   flip: $('#flip'),
@@ -738,6 +751,7 @@ function frame() {
     frames = 0;
     fpsT = now;
   }
+  tickTempo(now);
   tickLive(now);
 }
 
@@ -1309,10 +1323,11 @@ const TETRIS_FILL = [
   [[0, 0]],
 ].flatMap(orientations);
 
-const tetris = { plan: null, seed: 1 };
+const tetris = { plan: null, seed: 1, lastDrop: 0 };
 
-// Played from MIDI, the pieces wait for notes instead of a timeline.
-const tetrisByNotes = () => midi.on && midi.devices > 0;
+// Played from MIDI or a tempo, the pieces wait for notes or beats instead
+// of a timeline.
+const tetrisByNotes = () => (midi.on && midi.devices > 0) || (tempoOn() && ui.tempoTetris.checked);
 
 function tetrisPlan(cols, rows, start, byNotes) {
   const seed = tetris.seed++;
@@ -1445,6 +1460,16 @@ function tetrisNote(note, vel, now) {
   const span = Math.max(12, midi.hi - midi.lo);
   const band = Math.min(P.bands - 1, Math.max(0, Math.floor(((note - midi.lo) / (span + 1)) * P.bands)));
   tetrisRelease(P, band, Math.max(1, Math.round((P.count / 60) * (0.4 + vel))), now);
+  tetris.lastDrop = now;
+}
+
+// On the beat: a batch sweeping across the bands, left to right, so a
+// picture builds in 32 beats (8 bars).
+function tetrisBeat(now) {
+  const P = tetris.plan;
+  if (!P || !P.byNotes || !P.unreleased) return;
+  tetrisRelease(P, tempo.beat % P.bands, Math.max(1, Math.ceil(P.count / 32)), now);
+  tetris.lastDrop = now;
 }
 
 // Where every piece is this frame, or null when nothing moves (Tetris off,
@@ -1459,7 +1484,7 @@ function tetrisFrame(now) {
   if (!P || P.cols !== state.cols || P.rows !== state.rows || P.byNotes !== byNotes || now > P.endAt) {
     P = tetris.plan = tetrisPlan(state.cols, state.rows, now, byNotes);
   }
-  if (P.byNotes && P.unreleased && now - midi.lastNote > 3000) {
+  if (P.byNotes && P.unreleased && now - tetris.lastDrop > 3000) {
     // No one playing: keep a slow trickle going (about 45 s for the lot),
     // so the picture never stalls half-built.
     const every = Math.max(16, 45000 / P.count);
@@ -2211,7 +2236,7 @@ const soundPulses = () => ui.sound.value === 'pulse' || ui.sound.value === 'both
 const soundShuffles = () => ui.sound.value === 'shuffle' || ui.sound.value === 'both';
 // Per-frame sound effects for the renderer, or null when off or silent.
 function soundFx() {
-  if ((!sound.analyser && !midi.on) || !soundPulses()) return null;
+  if (!(sound.analyser || midi.on || tempoOn()) || !(soundPulses() || tempoFlashes())) return null;
   const strength = +ui.fxStrength.value;
   if (strength <= 0) return null;
   const now = performance.now();
@@ -2385,11 +2410,12 @@ async function onSoundModeChange() {
 function updateSound() {
   if (midi.on) updateMidi();
   if (!sound.analyser) {
-    if (!midi.on) return;
-    // MIDI only: notes set the kick and hue, held notes the level.
+    if (!midi.on && !tempoOn()) return;
+    // MIDI or tempo only: notes and beats set the kick and hue, held
+    // notes the level.
     sound.kick *= 0.86;
     sound.hue *= 0.96;
-    sound.level = midi.level;
+    sound.level = midi.on ? midi.level : 0;
     ui.meterFill.style.transform = `scaleX(${sound.level.toFixed(3)})`;
     return;
   }
@@ -2423,7 +2449,8 @@ function updateSound() {
   sound.avg = sound.avg * 0.93 + rms * 0.07;
   sound.kick *= 0.86;
   sound.hue *= 0.96;
-  if (isBeat) {
+  // With tempo sync on, the beat comes from the tempo, not the microphone.
+  if (isBeat && !tempoOn()) {
     sound.kick = 1;
     sound.hue += (Math.random() < 0.5 ? -1 : 1) * (50 + Math.random() * 60);
     onBeat(now);
@@ -2460,6 +2487,7 @@ const midi = {
   bend: 0, // -1..1
   mod: 0, // 0..1
   lastNote: 0,
+  names: [],
   lo: 60, // the range of notes played so far, for Tetris bands
   hi: 72,
 };
@@ -2472,7 +2500,12 @@ function updateMidi() {
 
 function onMidiMessage(e) {
   const [status, a = 0, b = 0] = e.data;
+  if (status >= 0xf8) return onMidiRealtime(status, e.timeStamp); // clock, start, stop
   const type = status & 0xf0;
+  // Notes and controllers mapped with MIDI learn (or being learned) only
+  // work their control.
+  if ((type === 0x80 || type === 0x90 || type === 0xb0) && midiControl(type, (status & 0x0f) + 1, a, b)) return;
+  if (!midi.on) return; // "React to MIDI" is off
   const now = performance.now();
   if (type === 0x90 && b > 0) {
     const vel = b / 127;
@@ -2494,6 +2527,8 @@ function onMidiMessage(e) {
   }
 }
 
+// Every input gets the handler as soon as there's access: "React to MIDI",
+// MIDI learn and MIDI clock all listen through it.
 function connectMidiInputs() {
   const names = [];
   for (const input of midi.access.inputs.values()) {
@@ -2502,48 +2537,58 @@ function connectMidiInputs() {
   }
   if (names.length && !midi.devices) toast(`🎹 ${names[0]} connected`);
   midi.devices = names.length;
-  ui.midiStatus.textContent = names.length
-    ? `🎹 Listening to ${names.join(', ')}. Play away!`
+  midi.names = names;
+  syncMidiStatus();
+}
+
+const MIDI_HINT = ui.midiStatus.textContent;
+function syncMidiStatus() {
+  ui.midiStatus.textContent = !midi.on ? MIDI_HINT
+    : midi.devices ? `🎹 Listening to ${midi.names.join(', ')}. Play away!`
     : 'No MIDI device found. Plug one in (or turn on a virtual MIDI port) and it connects by itself.';
 }
 
-async function enableMidi() {
+// Ask for MIDI once; quiet: no toasts (connecting by itself on load).
+async function midiAccess(quiet = false) {
+  if (midi.access) return midi.access;
   if (!navigator.requestMIDIAccess) {
-    ui.midi.checked = false;
-    toast('MIDI needs Chrome, Edge or Firefox on a computer');
-    return;
+    if (!quiet) toast('MIDI needs Chrome, Edge or Firefox on a computer');
+    return null;
   }
   try {
-    midi.access = midi.access || (await navigator.requestMIDIAccess());
+    midi.access = await navigator.requestMIDIAccess();
   } catch (err) {
     dbg('MIDI failed:', err.name, err.message);
+    if (!quiet) toast(err.name === 'SecurityError' || err.name === 'NotAllowedError' ? 'MIDI permission was denied' : 'Couldn’t start MIDI');
+    return null;
+  }
+  midi.access.onstatechange = connectMidiInputs;
+  connectMidiInputs();
+  return midi.access;
+}
+
+async function enableMidi() {
+  if (!(await midiAccess())) {
     ui.midi.checked = false;
-    toast(err.name === 'SecurityError' || err.name === 'NotAllowedError' ? 'MIDI permission was denied' : 'Couldn’t start MIDI');
     return;
   }
   if (!ui.midi.checked) return; // turned off while the permission prompt was up
   midi.on = true;
-  midi.access.onstatechange = connectMidiInputs;
-  connectMidiInputs();
+  syncMidiStatus();
   syncSoundUI();
   dbg(`MIDI on, ${midi.devices} input(s)`);
 }
 
 function disableMidi() {
   midi.on = false;
-  midi.devices = 0;
   midi.held.clear();
   midi.level = midi.bend = midi.mod = 0;
-  if (midi.access) {
-    midi.access.onstatechange = null;
-    for (const input of midi.access.inputs.values()) input.onmidimessage = null;
-  }
-  if (!sound.analyser) {
+  if (!sound.analyser && !tempoOn()) {
     sound.level = sound.kick = sound.hue = 0;
     sound.ripples = [];
     ui.meterFill.style.transform = 'scaleX(0)';
   }
-  ui.midiStatus.textContent = 'Play a keyboard or drum pads: notes hit like beats, and with 🧱 Tetris on they drop the pieces (low notes on the left, high notes on the right).';
+  syncMidiStatus();
   syncSoundUI();
 }
 
@@ -2788,7 +2833,7 @@ function openOutput() {
     show.win.focus();
     return;
   }
-  const win = window.open('output.html?v=29', 'emojiFiedOutput', 'popup,width=960,height=540');
+  const win = window.open('output.html?v=30', 'emojiFiedOutput', 'popup,width=960,height=540');
   if (!win) {
     toast('Allow pop-ups for this site to open the output window');
     return;
@@ -2867,7 +2912,7 @@ function tickLive(now) {
     show.black = target ? Math.min(1, show.black + step) : Math.max(0, show.black - step);
   }
   // The strobe punch-in blacks out every other beat of its own (6 Hz).
-  const strobeDark = punchOn('strobe') && Math.floor((now - punch.strobeAt) / STROBE_HALF_MS) % 2 === 0;
+  const strobeDark = punchOn('strobe') && strobeIsDark(now);
   const dark = strobeDark ? 1 : show.black;
   // With an output window this one only dims, so you can still see.
   const shown = dark * (show.canvas ? 0.6 : 1);
@@ -3020,13 +3065,31 @@ function dropCrunch() {
 
 const punchHue = () => (punchOn('hue') ? ((performance.now() - punch.hueAt) * 0.6) % 360 : 0);
 
-// Stutter: let a frame through only every 125 ms.
+// Stutter: let a frame through only every 125 ms, or on each 16th note
+// when synced to a tempo.
 function stutterHold() {
   if (!punchOn('stutter')) return false;
   const t = performance.now();
+  if (tempoOn()) {
+    const step = `${tempo.beat}:${Math.floor((t - tempo.t0) / (tempo.period / 4))}`;
+    if (step === punch.stutterStep) return true;
+    punch.stutterStep = step;
+    return false;
+  }
   if (t - punch.stutterAt < 125) return true;
   punch.stutterAt = t;
   return false;
+}
+
+// Strobe: 6 Hz, starting dark; on a tempo, a flash every 8th note, lit on
+// the beat (every quarter note instead when 8ths would pass 6 a second).
+function strobeIsDark(now) {
+  if (tempoOn()) {
+    let half = tempo.period / 4;
+    if (1000 / (2 * half) > 6) half = tempo.period / 2;
+    return Math.floor((now - tempo.t0) / half) % 2 === 1;
+  }
+  return Math.floor((now - punch.strobeAt) / STROBE_HALF_MS) % 2 === 0;
 }
 
 // Zoom: a smaller window on the middle of the frame, eased in and out.
@@ -3095,6 +3158,7 @@ function buildPunchButtons() {
     const b = document.createElement('button');
     b.type = 'button';
     b.className = 'punch';
+    b.dataset.learn = `punch:${p.id}`;
     b.title = `${p.title}. Hold ${p.key.toUpperCase()}; Shift + ${p.key.toUpperCase()} locks it on.`;
     const ico = document.createElement('span');
     ico.textContent = p.icon;
@@ -3119,6 +3183,315 @@ function buildPunchButtons() {
   ui.punchHint.textContent = TOUCH_ONLY
     ? 'Hold a button to play it; let go to stop.'
     : 'Hold a key or button to play it, let go to stop. Shift + the key (or Shift-click) locks it on.';
+}
+
+// ---- Tempo ------------------------------------------------------------------
+// A beat to lock to: tapped (K), or MIDI clock (24 ticks a beat) from
+// Ableton, Traktor, a drum machine... Clock wins while it's running. With
+// "Sync to tempo" on, beats come from here instead of the microphone: they
+// flash and send beat shapes, drop Tetris pieces, shuffle the look every so
+// often, and Strobe and Stutter lock to them.
+
+const tempo = {
+  bpm: 0,
+  period: 0, // ms per beat
+  source: '', // 'tap' or 'clock'
+  t0: 0, // when the last beat landed
+  nextAt: 0, // the next tapped-tempo beat
+  beat: 0, // beats since sync started
+  taps: [],
+  ticks: [], // recent clock tick times
+  tickCount: 0,
+  lastTick: -1e9,
+  stopped: false, // MIDI Stop received
+  shown: '',
+};
+const tempoOn = () => ui.tempoSync.checked && tempo.bpm > 0;
+const tempoFlashes = () => tempoOn() && ui.tempoFlash.checked;
+const clockAlive = (now) => now - tempo.lastTick < 500;
+
+function setBpm(bpm, source) {
+  tempo.bpm = Math.min(300, Math.max(30, bpm));
+  tempo.period = 60000 / tempo.bpm;
+  tempo.source = source;
+  syncTempoUI();
+}
+
+function syncTempoUI() {
+  const text = tempo.bpm ? `${Math.round(tempo.bpm)} BPM · ${tempo.source === 'clock' ? 'MIDI clock' : 'tapped'}` : 'No tempo yet';
+  if (text !== tempo.shown) ui.tempoRead.textContent = tempo.shown = text;
+  ui.tempoOpts.hidden = !ui.tempoSync.checked;
+}
+
+function tapTempo() {
+  const now = performance.now();
+  if (now - (tempo.taps[tempo.taps.length - 1] ?? -1e9) > 2000) tempo.taps = [];
+  tempo.taps.push(now);
+  if (tempo.taps.length > 8) tempo.taps.shift();
+  ui.tapBtn.classList.add('hit');
+  setTimeout(() => ui.tapBtn.classList.remove('hit'), 90);
+  if (!ui.tempoSync.checked) {
+    ui.tempoSync.checked = true; // tapping means you want it
+    syncTempoUI();
+  }
+  if (clockAlive(now) && !tempo.stopped) return; // the clock is in charge
+  tempo.stopped = false;
+  if (tempo.taps.length >= 2) {
+    setBpm(60000 / ((now - tempo.taps[0]) / (tempo.taps.length - 1)), 'tap');
+  }
+  if (tempo.bpm) {
+    // Every tap lands on a beat, so one tap re-aligns a running tempo.
+    onTempoBeat(now);
+    tempo.nextAt = now + tempo.period;
+  }
+}
+
+// System real-time messages: clock, start, continue, stop. Ticks are timed
+// by the message's own time stamp (when it reached the computer): a busy
+// page can deliver several at once, which would throw the BPM off.
+function onMidiRealtime(status, stamp) {
+  const now = performance.now();
+  if (status === 0xf8) {
+    tempo.ticks.push(stamp > 0 ? stamp : now);
+    if (tempo.ticks.length > 49) tempo.ticks.shift();
+    tempo.lastTick = now;
+    if (tempo.ticks.length >= 25) {
+      const n = tempo.ticks.length - 1;
+      const bpm = 60000 / (((tempo.ticks[n] - tempo.ticks[0]) / n) * 24);
+      // Smooth out jitter, but follow a real tempo change straight away.
+      setBpm(tempo.source === 'clock' && Math.abs(bpm - tempo.bpm) < tempo.bpm * 0.08 ? tempo.bpm * 0.8 + bpm * 0.2 : bpm, 'clock');
+    }
+    if (tempo.tickCount % 24 === 0 && tempo.bpm && !tempo.stopped) onTempoBeat(now);
+    tempo.tickCount++;
+  } else if (status === 0xfa || status === 0xfb) {
+    tempo.stopped = false; // start (from beat one) or continue
+    if (status === 0xfa) {
+      tempo.tickCount = 0;
+      tempo.beat = 0;
+    }
+  } else if (status === 0xfc) {
+    tempo.stopped = true; // the transport stopped: so do the beats
+  }
+}
+
+// Every frame: run the tapped tempo (the clock beats by itself).
+function tickTempo(now) {
+  if (!tempoOn() || clockAlive(now) || tempo.stopped) return;
+  if (!tempo.nextAt || now - tempo.nextAt > tempo.period) tempo.nextAt = now + tempo.period;
+  if (now >= tempo.nextAt) {
+    onTempoBeat(now);
+    tempo.nextAt += tempo.period;
+  }
+}
+
+function onTempoBeat(now) {
+  if (!ui.tempoSync.checked) return;
+  tempo.t0 = now;
+  tempo.beat++;
+  const n = (tempo.beat - 1) % 4;
+  ui.beatDots.forEach((d, i) => d.classList.toggle('on', i === n));
+  if (ui.tempoFlash.checked) {
+    sound.kick = 1;
+    sound.hue += (Math.random() < 0.5 ? -1 : 1) * (50 + Math.random() * 60);
+    spawnWave(now);
+    ui.meter.classList.remove('beat');
+    void ui.meter.offsetWidth;
+    ui.meter.classList.add('beat');
+  }
+  if (ui.tempoShuffle.checked && tempo.beat % +ui.tempoEvery.value === 0 && hasSource() && !state.paused) {
+    randomize({ quiet: true, keepDetail: true });
+  }
+  if (ui.tempoTetris.checked) tetrisBeat(now);
+}
+
+ui.tapBtn.addEventListener('click', tapTempo);
+ui.tempoSync.addEventListener('change', () => {
+  tempo.beat = 0;
+  tempo.nextAt = 0;
+  ui.beatDots.forEach((d) => d.classList.remove('on'));
+  syncTempoUI();
+});
+syncTempoUI(); // the browser may have restored the box
+
+// ---- MIDI learn ---------------------------------------------------------------
+// Map a controller's knobs, faders and pads to the controls: knobs and
+// faders (CC) move sliders, pads and keys (notes) or CC buttons press
+// buttons; punch-ins last as long as the pad is held. Mapped notes don't
+// also play as music. Mappings are kept in this browser.
+
+const learn = { active: false, pending: null, map: {}, cc: {} };
+const LEARN_RANGES = {
+  cols: ['Detail', ui.cols],
+  contrast: ['Contrast', ui.contrast],
+  bright: ['Brightness', ui.bright],
+  sat: ['Saturation', ui.sat],
+  shadows: ['Shadows', ui.shadows],
+  highlights: ['Highlights', ui.highlights],
+  fx: ['Effect strength', ui.fxStrength],
+};
+const LEARN_BUTTONS = {
+  blackout: ['Blackout', () => toggleBlackout()],
+  freeze: ['Freeze', () => ui.pause.click()],
+  safe: ['Safe look', () => safeLook()],
+  tap: ['Tap tempo', () => tapTempo()],
+  random: ['Randomize', () => randomize()],
+  tetris: ['Tetris on/off', () => ui.tetris.click()],
+};
+
+// What a learned id controls: { label, set(v) } for sliders, { label,
+// press() } for buttons, { label, down(), up() } for punch-ins.
+function learnTarget(id) {
+  const [kind, arg] = id.split(':');
+  if (kind === 'range' && LEARN_RANGES[arg]) {
+    const [label, el] = LEARN_RANGES[arg];
+    return {
+      label,
+      set(v) {
+        const min = +el.min, max = +el.max, step = +el.step || 1;
+        el.value = String(min + Math.round((v * (max - min)) / step) * step);
+        el.dispatchEvent(new Event('input'));
+      },
+    };
+  }
+  if (kind === 'scene') return { label: `Scene ${arg}`, press: () => recallScene(+arg) };
+  if (kind === 'punch') {
+    const p = PUNCHES.find((q) => q.id === arg);
+    return p && { label: `${p.icon} ${p.label} (hold)`, down: () => punchDown(arg), up: () => punchUp(arg) };
+  }
+  if (LEARN_BUTTONS[id]) return { label: LEARN_BUTTONS[id][0], press: LEARN_BUTTONS[id][1] };
+  return null;
+}
+
+const NOTE_NAMES = ['C', 'C♯', 'D', 'D♯', 'E', 'F', 'F♯', 'G', 'G♯', 'A', 'A♯', 'B'];
+function describeMidiKey(key) {
+  const [kind, ch, n] = key.split(':');
+  return kind === 'note' ? `Note ${NOTE_NAMES[n % 12]}${Math.floor(n / 12) - 1} · ch ${ch}` : `CC ${n} · ch ${ch}`;
+}
+
+// A note or CC message: learn it, or work what it's mapped to. Returns
+// true when it was used, so it doesn't also play as music.
+function midiControl(type, ch, n, value) {
+  const isNote = type !== 0xb0;
+  const key = `${isNote ? 'note' : 'cc'}:${ch}:${n}`;
+  const press = type === 0x90 && value > 0;
+  if (learn.pending && (press || !isNote)) {
+    bindMidi(key, learn.pending);
+    return true;
+  }
+  const id = learn.map[key];
+  const t = id && learnTarget(id);
+  if (!t) return false;
+  if (t.set) {
+    if (!isNote || press) t.set(value / 127); // a pad sets it by how hard it's hit
+    return true;
+  }
+  let down = press;
+  if (!isNote) {
+    // CC buttons send 127 when pressed and 0 when let go.
+    const was = (learn.cc[key] ?? 0) >= 64;
+    learn.cc[key] = value;
+    down = value >= 64;
+    if (down === was) return true;
+  }
+  if (t.down) (down ? t.down : t.up)();
+  else if (down) t.press();
+  return true;
+}
+
+function bindMidi(key, id) {
+  learn.map[key] = id;
+  storeMidiMap();
+  learnPending(null);
+  renderMidiMap();
+  toast(`🎹 ${describeMidiKey(key)} → ${learnTarget(id).label}`);
+  dbg(`MIDI learn: ${key} -> ${id}`);
+}
+
+function storeMidiMap() {
+  try {
+    localStorage.setItem('emojiFiedMidiMap', JSON.stringify(learn.map));
+  } catch {}
+}
+
+function renderMidiMap() {
+  const rows = Object.entries(learn.map).filter(([, id]) => learnTarget(id));
+  ui.midiMap.replaceChildren(
+    ...rows.map(([key, id]) => {
+      const row = document.createElement('div');
+      row.className = 'map-row';
+      const what = document.createElement('span');
+      const from = document.createElement('span');
+      from.className = 'from';
+      from.textContent = `${describeMidiKey(key)} → `;
+      what.append(from, learnTarget(id).label);
+      const x = document.createElement('button');
+      x.type = 'button';
+      x.textContent = '✕';
+      x.title = 'Remove this mapping';
+      x.addEventListener('click', () => {
+        delete learn.map[key];
+        storeMidiMap();
+        renderMidiMap();
+      });
+      row.append(what, x);
+      return row;
+    })
+  );
+}
+
+const LEARN_HINT = ui.learnHint.textContent;
+function learnPending(id) {
+  learn.pending = id;
+  document.querySelectorAll('.learn-pending').forEach((el) => el.classList.remove('learn-pending'));
+  if (id) document.querySelector(`[data-learn="${id}"]`)?.classList.add('learn-pending');
+  ui.learnHint.textContent = !learn.active ? LEARN_HINT
+    : id ? `Now move a knob or fader, or hit a pad, for “${learnTarget(id).label}”…`
+    : 'Click a slider or button to map (dashed outlines, on any tab), then move a knob or hit a pad. Esc or Done when finished.';
+}
+
+async function setLearning(on) {
+  if (on && !(await midiAccess())) return;
+  learn.active = on;
+  document.body.classList.toggle('learning', on);
+  ui.learnBtn.setAttribute('aria-pressed', String(on));
+  ui.learnBtn.textContent = on ? 'Done' : 'Learn…';
+  learnPending(null);
+  if (on && !midi.devices) toast('No MIDI device found yet: plug one in');
+}
+
+// Tag what can be learned.
+for (const [k, [, el]] of Object.entries(LEARN_RANGES)) el.dataset.learn = `range:${k}`;
+ui.blackoutBtn.dataset.learn = 'blackout';
+ui.freezeBtn.dataset.learn = 'freeze';
+ui.safeBtn.dataset.learn = 'safe';
+ui.tapBtn.dataset.learn = 'tap';
+ui.random.dataset.learn = 'random';
+ui.tetris.closest('label').dataset.learn = 'tetris';
+
+// While learning, a click picks the control instead of using it.
+for (const ev of ['pointerdown', 'mousedown', 'touchstart', 'click']) {
+  document.addEventListener(ev, (e) => {
+    if (!learn.active) return;
+    const el = e.target.closest?.('[data-learn]');
+    if (!el) return;
+    e.preventDefault();
+    e.stopPropagation();
+    if (ev === 'pointerdown') learnPending(el.dataset.learn);
+  }, { capture: true, passive: false });
+}
+ui.learnBtn.addEventListener('click', () => setLearning(!learn.active));
+
+try {
+  learn.map = JSON.parse(localStorage.getItem('emojiFiedMidiMap') || '{}') || {};
+} catch {
+  learn.map = {};
+}
+renderMidiMap();
+if (!navigator.requestMIDIAccess) {
+  ui.learnBtn.hidden = true;
+  ui.learnHint.textContent = 'MIDI controllers and MIDI clock work in Chrome, Edge and Firefox on a computer.';
+} else if (Object.keys(learn.map).length) {
+  midiAccess(true); // your controller works straight away next time
 }
 
 // ---- Scenes -----------------------------------------------------------------
@@ -3218,6 +3591,8 @@ function renderScenes() {
       const b = document.createElement('button');
       b.type = 'button';
       b.className = `scene${scene ? '' : ' empty'}${show.scene === n ? ' current' : ''}`;
+      b.dataset.learn = `scene:${n}`;
+      if (learn.pending === `scene:${n}`) b.classList.add('learn-pending');
       b.title = scene ? `${scene.label} (${n}; Shift + ${n} to save over it)` : `Empty: click or press Shift + ${n} to save the current look`;
       const num = document.createElement('b');
       num.textContent = n;
@@ -3469,6 +3844,11 @@ function onKey(e) {
     if (!e.repeat) punchDown(p.id, e.shiftKey);
     return;
   }
+  if (e.key === 'Escape' && learn.active) {
+    setLearning(false);
+    return;
+  }
+  if (e.key === 'k') tapTempo();
   if (e.key === 'b') toggleBlackout();
   if (e.key === ' ') { e.preventDefault(); ui.pause.click(); }
   if (e.key === 's') snapshot();
@@ -3496,5 +3876,5 @@ try {
 } catch (err) {
   ui.error.textContent = `Setup failed: ${err.message}`;
 }
-window.emojiFiedReady = '29';
-dbg('app.js v29 initialised');
+window.emojiFiedReady = '30';
+dbg('app.js v30 initialised');

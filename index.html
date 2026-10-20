@@ -13,7 +13,7 @@
   <link rel="apple-touch-icon" href="icons/icon-180.png" />
   <title>Emoji-fied</title>
   <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🤩</text></svg>" />
-  <link rel="stylesheet" href="style.css?v=29" />
+  <link rel="stylesheet" href="style.css?v=30" />
 </head>
 <body>
   <header>
@@ -57,7 +57,7 @@
           </div>
           <p class="status" id="status" aria-live="polite"></p>
           <p class="error" id="error" role="alert"></p>
-          <p class="note">Everything runs in your browser. No video leaves your device. <span class="version">v29</span></p>
+          <p class="note">Everything runs in your browser. No video leaves your device. <span class="version">v30</span></p>
         </div>
       </div>
     </div>
@@ -245,6 +245,40 @@
         <div class="punches" id="punches"></div>
         <span class="hint" id="punchHint"></span>
         <div class="adjust-head">
+          <span class="field-label">🥁 Tempo</span>
+          <span class="tempo-read" id="tempoRead">No tempo yet</span>
+        </div>
+        <div class="tempo-row">
+          <button id="tapBtn" type="button">🥁 Tap <kbd>K</kbd></button>
+          <span class="beat-dots" id="beatDots" aria-hidden="true"><i></i><i></i><i></i><i></i></span>
+          <label class="tempo-sync"><input id="tempoSync" type="checkbox" /> Sync to tempo</label>
+        </div>
+        <div class="tempo-opts" id="tempoOpts" hidden>
+          <div class="toggles">
+            <label><input id="tempoFlash" type="checkbox" checked /> Flash + beat shapes</label>
+            <label><input id="tempoTetris" type="checkbox" checked /> Tetris drops</label>
+          </div>
+          <div class="toggles">
+            <label><input id="tempoShuffle" type="checkbox" /> Shuffle the look every</label>
+            <select id="tempoEvery" aria-label="Beats between shuffles">
+              <option value="1">beat</option>
+              <option value="2">2 beats</option>
+              <option value="4" selected>4 beats</option>
+              <option value="8">8 beats</option>
+              <option value="16">16 beats</option>
+            </select>
+          </div>
+        </div>
+        <span class="hint" id="tempoHint">Tap K in time (4 taps or more; one tap re-aligns the beat), or send MIDI clock from Ableton, Traktor or a drum machine. With sync on, the beat drives the effects instead of the microphone, and Strobe and Stutter lock to it.</span>
+
+        <div class="adjust-head" id="learnHead">
+          <span class="field-label">🎹 MIDI controller</span>
+          <button id="learnBtn" type="button" class="reset" aria-pressed="false">Learn…</button>
+        </div>
+        <div class="midi-map" id="midiMap"></div>
+        <span class="hint" id="learnHint">Map knobs, faders and pads to the controls: click Learn…, click a slider or button, then move a knob or hit a pad.</span>
+
+        <div class="adjust-head">
           <span class="field-label">Scenes</span>
           <button id="sceneSave" type="button" class="reset" aria-pressed="false">💾 Save to a slot…</button>
         </div>
@@ -375,7 +409,7 @@
             function () { var r = document.createRange(); r.selectNodeContents(pre); var s = getSelection(); s.removeAllRanges(); s.addRange(r); }
           );
         });
-        dbg('page v29', navigator.userAgent);
+        dbg('page v30', navigator.userAgent);
         dbg('secure=' + window.isSecureContext, 'mediaDevices=' + !!navigator.mediaDevices,
             'getUserMedia=' + !!(navigator.mediaDevices && navigator.mediaDevices.getUserMedia));
         if (navigator.permissions && navigator.permissions.query) {
@@ -396,11 +430,11 @@
       window.addEventListener('unhandledrejection', function (e) { dbg('REJECTION', String(e.reason)); show((e.reason && e.reason.message) || String(e.reason)); });
       window.addEventListener('load', function () {
         dbg('load event, app ready = ' + window.emojiFiedReady);
-        if (window.emojiFiedReady !== '29') show('an old or broken copy of the app loaded. Close this tab and open the link again.');
+        if (window.emojiFiedReady !== '30') show('an old or broken copy of the app loaded. Close this tab and open the link again.');
       });
     })();
   </script>
-  <script src="gif.js?v=29"></script>
-  <script src="app.js?v=29"></script>
+  <script src="gif.js?v=30"></script>
+  <script src="app.js?v=30"></script>
 </body>
 </html>

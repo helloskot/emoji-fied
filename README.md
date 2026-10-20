@@ -86,6 +86,23 @@ viewers), `W` 🔁 stutter, `E` 🌈 hue spin, `A` 🔍 zoom, `Z` 🌗 invert, `
 kaleidoscope, `C` 📼 glitch, `V` 🧊 crunch (a quarter of the detail). They
 stack, and touch only the live picture, not posters.
 
+**🥁 Tempo**: tap `K` in time (one tap later re-aligns the beat), or send MIDI
+clock from Ableton, Traktor or a drum machine (it wins while it runs, follows
+Start/Stop, and is timed by the messages' own time stamps). With *Sync to
+tempo* on, the beat drives the effects instead of the microphone: flash and
+beat shapes, Tetris drops (a picture builds in 8 bars, sweeping left to
+right) and, if you like, a look shuffle every 1–16 beats. Strobe flashes on
+8th notes (quarter notes above 180 BPM, to stay under 6 a second) and Stutter
+moves on 16ths.
+
+**🎹 MIDI controller** (MIDI learn): click *Learn…*, click a slider (Detail,
+the adjustments, Effect strength) or a button (scenes, panic buttons,
+punch-ins, Tap, 🎲, Tetris), then move a knob or fader or hit a pad. Knobs
+move sliders; pads and CC buttons press buttons, and punch-ins last as long as
+the pad is held. Mapped notes don't also play as music; everything else on the
+controller still does with *React to MIDI* on. Mappings are kept in the
+browser, and the controller reconnects by itself next time.
+
 Front/back camera: the switch button over the camera view (or `F`); mirroring
 follows the camera and recordings carry on through a switch.
 
