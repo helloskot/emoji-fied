@@ -2941,9 +2941,12 @@ const show = {
 const BLACKOUT_FADE_MS = 600;
 const OUTPUT_IDLE_TEXT = ui.outputStatus.textContent;
 const TOUCH_ONLY = matchMedia('(hover: none)').matches;
-const SCENES_HINT = TOUCH_ONLY
-  ? 'Tap an empty slot to save the look there, a full one to switch to it.'
-  : '1–9 switches, Shift + 1–9 saves. Clicking an empty slot saves too.';
+// Touch screens get touch wording until a keyboard turns up (an iPad's).
+const keysInUse = () => !TOUCH_ONLY || document.body.classList.contains('has-keys');
+const scenesHint = () => (keysInUse()
+  ? '1–9 switches, Shift + 1–9 saves. Clicking an empty slot saves too.'
+  : 'Tap an empty slot to save the look there, a full one to switch to it.');
+const punchHint = () => (keysInUse() ? 'Shift locks one on' : 'hold a pad');
 
 // ---- Output window ---------------------------------------------------------
 // A second window with only the picture, for the projector or a second
@@ -2956,7 +2959,7 @@ function openOutput() {
     show.win.focus();
     return;
   }
-  const win = window.open('output.html?v=31', 'emojiFiedOutput', 'popup,width=960,height=540');
+  const win = window.open('output.html?v=32', 'emojiFiedOutput', 'popup,width=960,height=540');
   if (!win) {
     toast('Allow pop-ups for this site to open the output window');
     return;
@@ -3300,7 +3303,7 @@ function buildPunchButtons() {
     punch.buttons[p.id] = b;
     ui.punches.append(b);
   }
-  ui.punchHint.textContent = TOUCH_ONLY ? 'hold a pad' : 'Shift locks one on';
+  ui.punchHint.textContent = punchHint();
 }
 
 // ---- Tempo ------------------------------------------------------------------
@@ -3700,7 +3703,7 @@ function setSaving(on) {
   show.saving = on;
   ui.sceneSave.setAttribute('aria-pressed', String(on));
   ui.sceneSave.textContent = on ? 'Cancel' : '💾 Save to a slot…';
-  ui.scenesHint.textContent = on ? 'Pick a slot to save the current look there.' : SCENES_HINT;
+  ui.scenesHint.textContent = on ? 'Pick a slot to save the current look there.' : scenesHint();
   renderScenes();
 }
 
@@ -3733,7 +3736,15 @@ function renderScenes() {
 }
 
 ui.outputRow.hidden = TOUCH_ONLY; // phones and tablets: no second window
-ui.scenesHint.textContent = SCENES_HINT;
+ui.scenesHint.textContent = scenesHint();
+// The first real key press on a touch screen means a keyboard: show the
+// key hints from then on.
+document.addEventListener('keydown', (e) => {
+  if (!e.isTrusted || keysInUse()) return;
+  document.body.classList.add('has-keys');
+  ui.punchHint.textContent = punchHint();
+  if (!show.saving) ui.scenesHint.textContent = scenesHint();
+}, true);
 ui.outputBtn.addEventListener('click', openOutput);
 ui.outputClose.addEventListener('click', closeOutput);
 ui.blackoutBtn.addEventListener('click', () => toggleBlackout());
@@ -3744,6 +3755,22 @@ loadScenes();
 renderScenes();
 buildPunchButtons();
 window.addEventListener('blur', () => releasePunches());
+
+// Tablets held upright pin the picture along the top; the main controls
+// column pins under it as well, but only if it fits below the picture.
+const ctlMain = document.querySelector('.ctl-main');
+function fitTabletLayout() {
+  const upright = matchMedia('(min-width: 700px) and (orientation: portrait)').matches;
+  const stageH = ui.stage.getBoundingClientRect().height;
+  ui.controls.style.setProperty('--stage-h', `${Math.round(stageH)}px`);
+  ui.controls.classList.toggle('pin-main', upright && stageH + 30 + ctlMain.offsetHeight + 12 <= innerHeight);
+}
+if (window.ResizeObserver) {
+  const ro = new ResizeObserver(fitTabletLayout);
+  ro.observe(ui.stage);
+  ro.observe(ctlMain);
+}
+addEventListener('resize', fitTabletLayout);
 
 // The logo's dot: a little emoji that keeps changing its mind.
 const LOGO_DOTS = ['😀', '🔥', '🌈', '✨', '🤩', '🍩', '💀', '🐸', '💖', '⭐'];
@@ -3966,9 +3993,12 @@ ui.mic.addEventListener('change', onSoundModeChange);
 ui.mic.checked = false; // starts off, even if the browser restored the box
 ui.midi.addEventListener('change', () => (ui.midi.checked ? enableMidi() : disableMidi()));
 ui.midi.checked = false; // MIDI starts off, even if the browser restored the box
+// No Web MIDI (Safari, so every iPhone and iPad): leave MIDI out entirely
+// rather than show controls that can't work.
 if (!navigator.requestMIDIAccess) {
   ui.midi.disabled = true;
-  ui.midiChip.title = 'MIDI works in Chrome, Edge and Firefox on a computer';
+  ui.midiChip.hidden = true;
+  document.getElementById('learnSec').hidden = true;
 }
 const onBeatShapeChange = () => {
   const off = ui.beatShape.value === 'off';
@@ -4052,5 +4082,5 @@ try {
 } catch (err) {
   ui.error.textContent = `Setup failed: ${err.message}`;
 }
-window.emojiFiedReady = '31';
-dbg('app.js v31 initialised');
+window.emojiFiedReady = '32';
+dbg('app.js v32 initialised');

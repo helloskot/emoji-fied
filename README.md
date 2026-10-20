@@ -109,7 +109,15 @@ Layout: on a phone the picture sits above the controls, kept short enough
 that the toolbar always shows. Wide-but-short screens (a phone on its side,
 an unfolded iPhone Duo) get a book layout, the picture on the left page and
 the controls on the right, so the fold runs down the gap between them;
-computers get the picture with a controls sidebar.
+computers and iPads on their side get the picture with a controls sidebar.
+**iPad held upright**: the picture stays pinned along the top, and the
+controls scroll underneath in two columns (toolbar, source and style on the
+left, pinned under the picture when there's room; the tabs on the right), so
+the output is always in view. On touch screens faders and switches are
+bigger, double-tap doesn't zoom, punch-in pads take several fingers at once,
+and key hints appear as soon as a keyboard (an iPad's) is used. Split View and
+Slide Over get the phone layout. MIDI isn't offered where the browser has no
+Web MIDI (Safari, so every iPhone and iPad).
 
 Full screen (⛶) fills the screen, using native full screen where the browser
 allows it (iPhone Safari doesn't, so it fills the page), and keeps the screen

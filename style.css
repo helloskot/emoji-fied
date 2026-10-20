@@ -134,9 +134,9 @@ main {
   gap: 16px;
 }
 
-/* Side by side: computers, and wide-but-short screens such as a phone on
-   its side or an unfolded iPhone Duo (890 x 626). */
-@media (min-width: 960px), (min-width: 640px) and (orientation: landscape) {
+/* Side by side: computers, iPads on their side, and wide-but-short screens
+   such as a phone on its side or an unfolded iPhone Duo (890 x 626). */
+@media (min-width: 640px) and (orientation: landscape) {
   main { grid-template-columns: 1fr 352px; align-items: start; }
 }
 /* Below computer widths it's a book: two equal pages, the picture on the
@@ -167,28 +167,49 @@ main {
    that the toolbar shows below it, however tall the video is. svh is the
    height with Safari's toolbars showing. */
 .stage {
-  max-height: calc(100vh - 140px);
-  max-height: calc(100svh - 140px);
+  max-height: calc(100vh - 146px);
+  max-height: calc(100svh - 146px);
   justify-self: center; /* centred when the height cap narrows it */
 }
 
 /* Side by side: the controls column runs long, so the picture sticks to
    the top of the window while you scroll it, capped to the window height
    so tall pictures still fit. */
-@media (min-width: 960px), (min-width: 640px) and (orientation: landscape) {
+@media (min-width: 640px) and (orientation: landscape) {
   .stage {
     position: sticky;
     top: 16px;
-    max-height: calc(100vh - 32px);
-    max-height: calc(100svh - 32px);
-  }
-}
-/* Short screens: also leave room for the header above it. */
-@media (max-height: 700px) and (min-width: 640px) and (orientation: landscape) {
-  .stage {
+    /* Room for the header above it too, so it fits before you scroll. */
     max-height: calc(100vh - 72px);
     max-height: calc(100svh - 72px);
   }
+}
+
+/* Tablets held upright (iPad portrait): the picture stays pinned along the
+   top while the controls scroll underneath it in two columns, the main
+   controls on the left and the tabs on the right, so the output is always
+   in view. A band of background around the pinned picture hides the
+   controls sliding under it. */
+@media (min-width: 700px) and (orientation: portrait) {
+  .stage {
+    position: sticky;
+    top: 8px;
+    z-index: 10;
+    max-height: 56vh;
+    max-height: 56svh;
+    box-shadow:
+      0 0 0 1px var(--line),
+      0 0 0 10px var(--bg),
+      0 26px 30px -14px var(--bg);
+  }
+  .controls {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1.2fr);
+    align-items: start;
+    column-gap: 18px;
+  }
+  /* The left column (toolbar, source, style) pins under the picture too,
+     when there's room for it (app.js measures and sets the class). */
+  .controls.pin-main .ctl-main { position: sticky; top: calc(var(--stage-h, 0px) + 30px); }
 }
 
 #out {
@@ -375,6 +396,7 @@ body.immersive .stage {
 
 /* ---- The controls panel -------------------------------------------------- */
 
+.ctl-main, .ctl-tabs { display: grid; gap: 12px; min-width: 0; }
 .controls {
   background: linear-gradient(180deg, #1a191f, var(--panel) 120px);
   border: 1px solid var(--line);
@@ -439,7 +461,10 @@ button {
   transition: transform 0.06s, box-shadow 0.06s, background-color 0.15s, border-color 0.15s;
   -webkit-tap-highlight-color: transparent;
 }
-button:hover:not(:disabled) { border-color: #56535e; }
+@media (hover: hover) {
+  button:hover:not(:disabled) { border-color: #56535e; }
+}
+button, .chip, .toggles label, select { touch-action: manipulation; } /* no double-tap zoom */
 button:active:not(:disabled) { transform: translateY(2px); box-shadow: 0 0 0 #07070a; }
 button:focus-visible { outline: 2px solid var(--tab); outline-offset: 2px; }
 button:disabled { opacity: 0.45; cursor: default; }
@@ -725,7 +750,7 @@ input[type="range"]:focus-visible::-webkit-slider-thumb { box-shadow: 0 0 0 2px 
   gap: 8px;
 }
 .menu button kbd { margin-left: auto; }
-.menu button:hover:not(:disabled) { background: var(--key); }
+.menu button:hover:not(:disabled), .menu button:focus-visible { background: var(--key); }
 .menu button:active:not(:disabled) { transform: none; }
 .menu button[hidden] { display: none; }
 .snap-tray {
@@ -1087,7 +1112,23 @@ body.learning [data-learn].learn-pending { outline-style: solid; animation: lear
 }
 
 /* Touch screens: there's no keyboard to press, so no key hints. */
-@media (hover: none) { kbd, #keysItem, #keysBtn { display: none; } }
+/* Touch screens: no key hints, until a keyboard is used (an iPad's). */
+@media (hover: none) {
+  body:not(.has-keys) kbd,
+  body:not(.has-keys) #keysItem,
+  body:not(.has-keys) #keysBtn { display: none; }
+}
+
+/* Fingers: bigger fader caps and switches. */
+@media (pointer: coarse) {
+  input[type="range"] { height: 34px; }
+  input[type="range"]::-webkit-slider-thumb { width: 20px; height: 30px; margin-top: -13px; border-radius: 7px; background: linear-gradient(90deg, transparent 9px, rgba(0, 0, 0, 0.35) 9px, rgba(0, 0, 0, 0.35) 11px, transparent 11px), linear-gradient(180deg, #fffaf0, #d9d3c6); }
+  input[type="range"]::-moz-range-thumb { width: 20px; height: 30px; }
+  .toggles input[type="checkbox"], .tilt-opts input[type="checkbox"] { width: 40px; height: 24px; }
+  .toggles input[type="checkbox"]::before, .tilt-opts input[type="checkbox"]::before { width: 20px; height: 20px; }
+  .toggles input[type="checkbox"]:checked::before, .tilt-opts input[type="checkbox"]:checked::before { transform: translateX(16px); }
+  .chip { padding: 10px 16px 10px 14px; }
+}
 
 /* Calm, for anyone who prefers less motion. */
 @media (prefers-reduced-motion: reduce) {
