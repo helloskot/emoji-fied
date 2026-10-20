@@ -297,13 +297,16 @@ input[type="text"] { font-size: 18px; }
   transform-origin: left;
   transform: scaleX(0);
 }
-.sound-opts { display: grid; gap: 12px; margin-top: 6px; }
-.sound-opts[hidden] { display: none; }
-.midi { display: grid; gap: 4px; margin-top: 10px; }
 .meter.beat { animation: beat 0.25s ease-out; }
 @keyframes beat { from { box-shadow: 0 0 0 3px rgba(255, 210, 63, 0.6); } to { box-shadow: 0 0 0 0 rgba(255, 210, 63, 0); } }
 
-.field-label { color: var(--muted); font-size: 13px; }
+.field-label {
+  color: var(--muted);
+  font-size: 11.5px;
+  font-weight: 600;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
 
 
 .tilt-opts { display: grid; gap: 4px; padding-left: 4px; }
@@ -311,7 +314,7 @@ input[type="text"] { font-size: 18px; }
 .tilt-opts label { display: flex; align-items: center; gap: 6px; cursor: pointer; }
 .tilt-opts input { accent-color: var(--accent); width: 16px; height: 16px; }
 .hint { color: var(--muted); font-size: 12px; }
-.poster-box { display: grid; gap: 8px; padding-top: 10px; border-top: 1px solid var(--line); }
+.poster-box { display: grid; gap: 8px; }
 #posterImg {
   width: 100%;
   max-height: 60vh;
@@ -405,7 +408,43 @@ button.primary {
 button:disabled { opacity: 0.5; cursor: default; }
 
 /* Toolbar: one row of icon buttons with short labels. */
-.toolbar { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 5px; }
+.toolbar { position: relative; display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 5px; }
+.tool { position: relative; }
+.tool .badge {
+  position: absolute;
+  top: 3px;
+  right: 6px;
+  min-width: 17px;
+  height: 17px;
+  padding: 0 4px;
+  border-radius: 999px;
+  background: var(--accent);
+  color: var(--accent-ink);
+  font: 600 11px/17px system-ui, sans-serif;
+}
+.tool .badge[hidden] { display: none; }
+.tool.snapped { animation: snapped 0.35s ease-out; }
+@keyframes snapped { from { background: #fff; } }
+/* The More menu drops down from the toolbar's right edge. */
+.menu {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  z-index: 20;
+  display: grid;
+  min-width: 230px;
+  padding: 6px;
+  background: var(--panel-2);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
+}
+.menu[hidden] { display: none; }
+.menu button { border: 0; background: none; text-align: left; padding: 9px 10px; border-radius: 8px; }
+.menu button:hover:not(:disabled) { background: var(--line); }
+.menu button[hidden] { display: none; }
+.snap-tray { justify-self: start; padding: 6px 12px; font-size: 13px; border-color: var(--accent); }
+.snap-tray[hidden] { display: none; }
 .tool {
   display: grid;
   justify-items: center;
@@ -458,8 +497,36 @@ button:disabled { opacity: 0.5; cursor: default; }
 .tab-dot[hidden] { display: none; }
 .tab-panel { display: grid; gap: 10px; }
 .tab-panel[hidden] { display: none; }
-.adjust-head { display: flex; align-items: center; justify-content: space-between; }
-.adjust-head .reset { padding: 0; }
+/* Sections inside a tab: the same header everywhere (title, then an
+   action or a short note on the right) and a thin rule between them. */
+.sec { display: grid; gap: 10px; }
+.sec[hidden] { display: none; }
+.tab-panel > .sec:not([hidden]) ~ .sec:not([hidden]) { border-top: 1px solid var(--line); padding-top: 12px; }
+.sec-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.sec-head .reset { padding: 0; }
+.sec-head .hint { text-align: right; }
+.sub { display: grid; gap: 6px; }
+.sub[hidden] { display: none; }
+.keys-link { justify-self: center; font-size: 13px; }
+
+/* On/off chips (a checkbox inside a pill). */
+.chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 7px 14px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: var(--panel-2);
+  cursor: pointer;
+  user-select: none;
+}
+.chip input { position: absolute; opacity: 0; pointer-events: none; }
+.chip:has(input:checked) { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); font-weight: 600; }
+.chip:has(input:disabled) { opacity: 0.45; cursor: default; }
+.chip:has(input:focus-visible) { outline: 2px solid var(--accent); outline-offset: 2px; }
+.chip[hidden] { display: none; }
 
 .clip {
   position: fixed;
@@ -607,13 +674,7 @@ kbd {
 .tempo-row { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
 .tempo-row button { padding: 8px 14px; }
 .tempo-row button.hit { border-color: var(--accent); }
-.tempo-sync { display: flex; align-items: center; gap: 6px; cursor: pointer; margin-left: auto; }
-.tempo-sync input { accent-color: var(--accent); width: 16px; height: 16px; }
-.tempo-read { font-variant-numeric: tabular-nums; font-weight: 600; font-size: 13px; }
-.tempo-opts { display: grid; gap: 8px; }
-.tempo-opts[hidden] { display: none; }
-.tempo-opts .toggles { align-items: center; }
-.tempo-opts select { width: auto; padding: 4px 8px; }
+.tempo-read { font-variant-numeric: tabular-nums; font-weight: 600; font-size: 13px; margin-left: auto; }
 .beat-dots { display: flex; gap: 5px; }
 .beat-dots i { width: 10px; height: 10px; border-radius: 50%; background: var(--line); }
 .beat-dots i.on { background: var(--accent); }
@@ -640,4 +701,23 @@ body.learning [data-learn].learn-pending { outline-style: solid; animation: lear
 .map-row button { padding: 2px 9px; font-size: 13px; }
 
 /* Touch screens: there's no keyboard to press, so no key hints. */
-@media (hover: none) { kbd { display: none; } }
+@media (hover: none) { kbd, #keysItem, #keysBtn { display: none; } }
+
+/* Sheets: snapshots and shortcuts */
+.sheet-title { margin: 0; font-size: 17px; text-align: center; }
+.snap-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(96px, 1fr));
+  gap: 6px;
+  max-height: 50vh;
+  overflow: auto;
+}
+.snap-grid button { padding: 0; overflow: hidden; aspect-ratio: 4 / 3; background: #000; }
+.snap-grid img { width: 100%; height: 100%; object-fit: contain; display: block; }
+.keys-card { width: min(100%, 640px); overflow: auto; }
+.keys { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 12px; }
+.keys h3 { margin: 0 0 6px; font-size: 12px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.05em; }
+.keys dl { margin: 0; display: grid; grid-template-columns: auto 1fr; gap: 5px 10px; align-items: center; font-size: 13px; }
+.keys dt { white-space: nowrap; }
+.keys dd { margin: 0; }
+.keys kbd { display: inline-block; }

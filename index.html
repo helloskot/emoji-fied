@@ -13,7 +13,7 @@
   <link rel="apple-touch-icon" href="icons/icon-180.png" />
   <title>Emoji-fied</title>
   <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🤩</text></svg>" />
-  <link rel="stylesheet" href="style.css?v=30" />
+  <link rel="stylesheet" href="style.css?v=31" />
 </head>
 <body>
   <header>
@@ -36,7 +36,7 @@
         <button id="tvHintClose" class="primary" type="button">Got it</button>
       </div>
 
-      <button id="flipFab" class="flip-fab" type="button" aria-label="Switch camera" title="Switch camera (F)" hidden>
+      <button id="flipFab" class="flip-fab" type="button" aria-label="Switch camera" title="Switch camera" hidden>
         <svg viewBox="0 0 24 24" width="26" height="26" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
           <path d="M20 7h-3l-2-3H9L7 7H4a1 1 0 0 0-1 1v11a1 1 0 0 0 1 1h16a1 1 0 0 0 1-1V8a1 1 0 0 0-1-1z" />
           <path d="M15.6 11.2A3.6 3.6 0 0 0 9 11.5" />
@@ -57,24 +57,30 @@
           </div>
           <p class="status" id="status" aria-live="polite"></p>
           <p class="error" id="error" role="alert"></p>
-          <p class="note">Everything runs in your browser. No video leaves your device. <span class="version">v30</span></p>
+          <p class="note">Everything runs in your browser. No video leaves your device. <span class="version">v31</span></p>
         </div>
       </div>
     </div>
 
     <section class="controls" aria-label="Filter controls">
       <div class="toolbar" role="toolbar" aria-label="Actions">
-        <button id="record" class="tool record" type="button" title="Record a video clip (R)"><span class="ico">⏺</span><span class="lbl">Record</span></button>
-        <button id="snap" class="tool" type="button" title="Save a snapshot (S)"><span class="ico">📸</span><span class="lbl">Photo</span></button>
+        <button id="record" class="tool record" type="button" title="Record a video clip"><span class="ico">⏺</span><span class="lbl">Record</span></button>
+        <button id="snap" class="tool" type="button" title="Take a snapshot (P). It waits in Snapshots until you save it."><span class="ico">📸</span><span class="lbl">Photo</span><span class="badge" id="snapBadge" hidden></span></button>
         <button id="pause" class="tool" type="button" title="Freeze the frame (Space)"><span class="ico">⏸</span><span class="lbl">Pause</span></button>
-        <button id="flip" class="tool" type="button" title="Switch between front and back camera (F)"><span class="ico">🔄</span><span class="lbl">Flip</span></button>
         <button id="full" class="tool" type="button" title="Full screen"><span class="ico">⛶</span><span class="lbl">Full</span></button>
-        <button id="airplay" class="tool" type="button" title="Open the live picture in the native player, for AirPlay, Picture in Picture and full screen"><span class="ico">📺</span><span class="lbl">AirPlay</span></button>
-        <button id="copy" class="tool" type="button" title="Copy the frame as text"><span class="ico">📋</span><span class="lbl">Text</span></button>
+        <button id="airplay" class="tool" type="button" title="Show it on a TV: AirPlay, Picture in Picture or the native player"><span class="ico">📺</span><span class="lbl">TV</span></button>
+        <button id="moreBtn" class="tool" type="button" aria-haspopup="menu" aria-expanded="false" title="More"><span class="ico">⋯</span><span class="lbl">More</span></button>
+        <div class="menu" id="moreMenu" role="menu" hidden>
+          <button id="flip" type="button" role="menuitem">🔄 Switch camera</button>
+          <button id="snapsItem" type="button" role="menuitem">🖼 Snapshots</button>
+          <button id="copy" type="button" role="menuitem">📋 Copy the frame as text</button>
+          <button id="keysItem" type="button" role="menuitem">⌨ Keyboard shortcuts <kbd>?</kbd></button>
+        </div>
       </div>
+      <button id="snapTray" class="snap-tray" type="button" hidden></button>
 
       <div class="field">
-        <span class="field-label">Source</span>
+        <span>Source</span>
         <div class="seg" role="group" aria-label="Video source">
           <button type="button" data-source="camera" aria-pressed="true">📷 Camera</button>
           <button type="button" data-source="file" aria-pressed="false">🎞 Video/GIF</button>
@@ -127,34 +133,38 @@
 
       <div class="tabs" role="tablist" aria-label="Settings">
         <button type="button" role="tab" data-tab="look" aria-selected="true">🎨 Look</button>
-        <button type="button" role="tab" data-tab="sound" aria-selected="false">🎤 Sound<span class="tab-dot" id="soundDot" hidden></span></button>
-        <button type="button" role="tab" data-tab="photo" aria-selected="false" id="photoTab" hidden>🖼 Photo</button>
+        <button type="button" role="tab" data-tab="beat" aria-selected="false">🎵 Beat<span class="tab-dot" id="soundDot" hidden></span></button>
         <button type="button" role="tab" data-tab="live" aria-selected="false">🎬 Live<span class="tab-dot live-dot" id="liveDot" hidden></span></button>
+        <button type="button" role="tab" data-tab="photo" aria-selected="false" id="photoTab" hidden>🖼 Photo</button>
       </div>
 
+      <!-- Look: how the picture is drawn -->
       <div class="tab-panel" data-panel="look" role="tabpanel">
-      <label class="field" id="matchField">
-        <span>Match by</span>
-        <select id="match">
-          <option value="color">Color</option>
-          <option value="brightness">Brightness</option>
-        </select>
-      </label>
-      <label class="field" id="colorField" hidden>
-        <span>Ink</span>
-        <select id="ink">
-          <option value="full">Full color</option>
-          <option value="#39ff7a">Matrix green</option>
-          <option value="#f2f2f2">White</option>
-          <option value="#ffb000">Amber</option>
-          <option value="#5ec8ff">Cyan</option>
-          <option value="#ff4fd8">Magenta</option>
-        </select>
-      </label>
-        <div class="adjust-head">
-          <span class="field-label">Adjustments</span>
-          <button id="resetAdjust" type="button" class="reset">Reset</button>
+        <div class="sec">
+          <label class="field" id="matchField">
+            <span>Match by</span>
+            <select id="match">
+              <option value="color">Color</option>
+              <option value="brightness">Brightness</option>
+            </select>
+          </label>
+          <label class="field" id="colorField" hidden>
+            <span>Ink</span>
+            <select id="ink">
+              <option value="full">Full color</option>
+              <option value="#39ff7a">Matrix green</option>
+              <option value="#f2f2f2">White</option>
+              <option value="#ffb000">Amber</option>
+              <option value="#5ec8ff">Cyan</option>
+              <option value="#ff4fd8">Magenta</option>
+            </select>
+          </label>
         </div>
+        <div class="sec">
+          <div class="sec-head">
+            <span class="field-label">Adjustments</span>
+            <button id="resetAdjust" type="button" class="reset">Reset</button>
+          </div>
           <label class="field range">
             <span>Contrast <output id="contrastOut"></output></span>
             <input id="contrast" type="range" min="0.5" max="3" step="0.05" value="1.2" />
@@ -175,43 +185,57 @@
             <span>Highlights <output id="highlightsOut"></output></span>
             <input id="highlights" type="range" min="-1" max="1" step="0.02" value="0" />
           </label>
-      <div class="toggles">
-        <label><input id="mirror" type="checkbox" checked /> Mirror</label>
-        <label><input id="invert" type="checkbox" /> Invert</label>
-        <label id="blankField"><input id="blank" type="checkbox" checked /> Blank darks</label>
-        <label title="The picture builds itself from falling Tetris pieces (T)"><input id="tetris" type="checkbox" /> 🧱 Tetris</label>
-      </div>
+        </div>
+        <div class="sec">
+          <div class="toggles">
+            <label><input id="mirror" type="checkbox" checked /> Mirror</label>
+            <label><input id="invert" type="checkbox" /> Invert</label>
+            <label id="blankField"><input id="blank" type="checkbox" checked /> Blank darks</label>
+            <label title="The picture builds itself from falling Tetris pieces (T)"><input id="tetris" type="checkbox" /> 🧱 Tetris build</label>
+          </div>
+        </div>
       </div>
 
-      <div class="tab-panel" data-panel="sound" role="tabpanel" hidden>
-        <div class="field">
-        <label for="sound">🎤 React to sound</label>
-        <select id="sound">
-          <option value="off">Off</option>
-          <option value="pulse">Pulse to the sound</option>
-          <option value="shuffle">Shuffle on beats</option>
-          <option value="both">Pulse + shuffle</option>
-        </select>
-        <div class="meter" id="meter" hidden aria-hidden="true"><div class="meter-fill" id="meterFill"></div></div>
-        <div class="midi">
-          <div class="toggles">
-            <label><input id="midi" type="checkbox" /> 🎹 React to MIDI</label>
+      <!-- Beat: what drives the effects, and what a beat does -->
+      <div class="tab-panel" data-panel="beat" role="tabpanel" hidden>
+        <div class="sec">
+          <span class="field-label">Listen to</span>
+          <div class="chips">
+            <label class="chip"><input id="mic" type="checkbox" /> 🎤 Sound</label>
+            <label class="chip" id="midiChip"><input id="midi" type="checkbox" /> 🎹 MIDI</label>
+            <label class="chip"><input id="tempoSync" type="checkbox" /> 🥁 Tempo</label>
           </div>
-          <span class="hint" id="midiStatus">Play a keyboard or drum pads: notes hit like beats, and with 🧱 Tetris on they drop the pieces (low notes on the left, high notes on the right).</span>
+          <div class="meter" id="meter" hidden aria-hidden="true"><div class="meter-fill" id="meterFill"></div></div>
+          <div class="sub" id="micOpts" hidden>
+            <label class="field range" id="sensField">
+              <span>Sensitivity <output id="sensOut"></output></span>
+              <input id="sens" type="range" min="0.5" max="4" step="0.1" value="2" />
+            </label>
+            <span class="hint" id="micStatus">Listening to the microphone.</span>
+          </div>
+          <div class="sub" id="midiOpts" hidden>
+            <span class="hint" id="midiStatus">Notes hit like beats; held notes swell; low notes build Tetris on the left, high on the right.</span>
+          </div>
+          <div class="sub" id="tempoBox" hidden>
+            <div class="tempo-row">
+              <button id="tapBtn" type="button">🥁 Tap <kbd>K</kbd></button>
+              <span class="beat-dots" id="beatDots" aria-hidden="true"><i></i><i></i><i></i><i></i></span>
+              <span class="tempo-read" id="tempoRead">No tempo yet</span>
+            </div>
+            <span class="hint">Tap 4 times or more, or send MIDI clock. The tempo’s beat replaces the microphone’s.</span>
+          </div>
         </div>
-        <div class="sound-opts" id="soundOpts" hidden>
-          <label class="field range" id="sensField">
-            <span>Sensitivity <output id="sensOut"></output></span>
-            <input id="sens" type="range" min="0.5" max="4" step="0.1" value="2" />
-          </label>
-          <label class="field range">
-            <span>Effect strength <output id="fxOut"></output></span>
-            <input id="fxStrength" type="range" min="0" max="2" step="0.05" value="1" />
-          </label>
+        <div class="sec" id="beatOpts">
+          <span class="field-label">On the beat</span>
+          <div class="toggles">
+            <label title="Glyphs swell with the loudness or held notes"><input id="beatPulse" type="checkbox" checked /> Pulse</label>
+            <label title="Flash, shake, zoom punch and a hue shift on each beat"><input id="beatFlash" type="checkbox" checked /> Flash</label>
+            <label title="Each beat drops Tetris pieces while 🧱 Tetris build is on"><input id="beatTetris" type="checkbox" checked /> Tetris drops</label>
+          </div>
           <label class="field">
-            <span>Beat shapes</span>
+            <span>Shapes</span>
             <select id="beatShape">
-              <option value="off" selected>🚫 Off (no shapes)</option>
+              <option value="off" selected>🚫 Off</option>
               <option value="mix">🎲 Mix it up</option>
               <option value="circle">○ Circles</option>
               <option value="heart">♥ Hearts</option>
@@ -225,81 +249,82 @@
           <div class="toggles" id="beatOutlineRow" hidden>
             <label><input id="beatOutline" type="checkbox" checked /> Glow outlines</label>
           </div>
-        </div>
-        </div>
-      </div>
-
-      <div class="tab-panel live-panel" data-panel="live" role="tabpanel" hidden>
-        <div class="output-row" id="outputRow">
-          <button id="outputBtn" type="button" class="primary">📽 Open output window</button>
-          <button id="outputClose" type="button" class="reset" hidden>Close the output window</button>
-          <span class="hint" id="outputStatus">A clean window for the projector or a second screen: only the picture, no buttons or cursor. Drag it there and double-click it for full screen; the controls stay here.</span>
-        </div>
-        <span class="field-label">Panic buttons</span>
-        <div class="panic">
-          <button id="blackoutBtn" type="button" aria-pressed="false">⬛ Blackout <kbd>B</kbd></button>
-          <button id="freezeBtn" type="button" aria-pressed="false">⏸ Freeze <kbd>Space</kbd></button>
-          <button id="safeBtn" type="button">🛟 Safe look <kbd>0</kbd></button>
-        </div>
-        <span class="field-label">Punch-in effects</span>
-        <div class="punches" id="punches"></div>
-        <span class="hint" id="punchHint"></span>
-        <div class="adjust-head">
-          <span class="field-label">🥁 Tempo</span>
-          <span class="tempo-read" id="tempoRead">No tempo yet</span>
-        </div>
-        <div class="tempo-row">
-          <button id="tapBtn" type="button">🥁 Tap <kbd>K</kbd></button>
-          <span class="beat-dots" id="beatDots" aria-hidden="true"><i></i><i></i><i></i><i></i></span>
-          <label class="tempo-sync"><input id="tempoSync" type="checkbox" /> Sync to tempo</label>
-        </div>
-        <div class="tempo-opts" id="tempoOpts" hidden>
-          <div class="toggles">
-            <label><input id="tempoFlash" type="checkbox" checked /> Flash + beat shapes</label>
-            <label><input id="tempoTetris" type="checkbox" checked /> Tetris drops</label>
-          </div>
-          <div class="toggles">
-            <label><input id="tempoShuffle" type="checkbox" /> Shuffle the look every</label>
-            <select id="tempoEvery" aria-label="Beats between shuffles">
-              <option value="1">beat</option>
-              <option value="2">2 beats</option>
-              <option value="4" selected>4 beats</option>
-              <option value="8">8 beats</option>
-              <option value="16">16 beats</option>
+          <label class="field">
+            <span>Shuffle the look</span>
+            <select id="beatShuffle">
+              <option value="0" selected>Never</option>
+              <option value="1">Every beat</option>
+              <option value="2">Every 2 beats</option>
+              <option value="4">Every 4 beats</option>
+              <option value="8">Every 8 beats</option>
+              <option value="16">Every 16 beats</option>
             </select>
-          </div>
+          </label>
+          <label class="field range">
+            <span>Strength <output id="fxOut"></output></span>
+            <input id="fxStrength" type="range" min="0" max="2" step="0.05" value="1" />
+          </label>
         </div>
-        <span class="hint" id="tempoHint">Tap K in time (4 taps or more; one tap re-aligns the beat), or send MIDI clock from Ableton, Traktor or a drum machine. With sync on, the beat drives the effects instead of the microphone, and Strobe and Stutter lock to it.</span>
-
-        <div class="adjust-head" id="learnHead">
-          <span class="field-label">🎹 MIDI controller</span>
-          <button id="learnBtn" type="button" class="reset" aria-pressed="false">Learn…</button>
-        </div>
-        <div class="midi-map" id="midiMap"></div>
-        <span class="hint" id="learnHint">Map knobs, faders and pads to the controls: click Learn…, click a slider or button, then move a knob or hit a pad.</span>
-
-        <div class="adjust-head">
-          <span class="field-label">Scenes</span>
-          <button id="sceneSave" type="button" class="reset" aria-pressed="false">💾 Save to a slot…</button>
-        </div>
-        <div class="scenes" id="scenes"></div>
-        <span class="hint" id="scenesHint">Press 1–9 to switch to a scene, Shift + 1–9 to save the current look there.</span>
       </div>
 
+      <!-- Live: performing -->
+      <div class="tab-panel live-panel" data-panel="live" role="tabpanel" hidden>
+        <div class="sec output-row" id="outputRow">
+          <button id="outputBtn" type="button" class="primary">📽 Open output window</button>
+          <span class="hint" id="outputStatus">A clean window for the projector: drag it there and double-click for full screen.</span>
+          <button id="outputClose" type="button" class="reset" hidden>Close the output window</button>
+        </div>
+        <div class="sec">
+          <span class="field-label">Panic</span>
+          <div class="panic">
+            <button id="blackoutBtn" type="button" aria-pressed="false">⬛ Blackout <kbd>B</kbd></button>
+            <button id="freezeBtn" type="button" aria-pressed="false">⏸ Freeze <kbd>Space</kbd></button>
+            <button id="safeBtn" type="button">🛟 Safe look <kbd>0</kbd></button>
+          </div>
+        </div>
+        <div class="sec">
+          <div class="sec-head">
+            <span class="field-label">Effects · hold</span>
+            <span class="hint" id="punchHint"></span>
+          </div>
+          <div class="punches" id="punches"></div>
+        </div>
+        <div class="sec">
+          <div class="sec-head">
+            <span class="field-label">Scenes</span>
+            <button id="sceneSave" type="button" class="reset" aria-pressed="false">💾 Save to a slot…</button>
+          </div>
+          <div class="scenes" id="scenes"></div>
+          <span class="hint" id="scenesHint"></span>
+        </div>
+        <div class="sec" id="learnSec">
+          <div class="sec-head" id="learnHead">
+            <span class="field-label">MIDI controller</span>
+            <button id="learnBtn" type="button" class="reset" aria-pressed="false">Learn…</button>
+          </div>
+          <div class="midi-map" id="midiMap"></div>
+          <span class="hint" id="learnHint">Click Learn…, then a slider or button, then move a knob or hit a pad.</span>
+        </div>
+        <button id="keysBtn" type="button" class="reset keys-link">⌨ All keyboard shortcuts <kbd>?</kbd></button>
+      </div>
+
+      <!-- Photo: only for photos and GIFs -->
       <div class="tab-panel photo-panel" id="photoPanel" data-panel="photo" role="tabpanel" hidden>
-        <span class="field-label">Photo effects</span>
-        <div class="toggles">
-          <label><input id="kenBurns" type="checkbox" checked /> 🎥 Pan &amp; zoom</label>
-          <label><input id="tilt" type="checkbox" /> 📱 Tilt to move</label>
-          <label><input id="twinkle" type="checkbox" /> ✨ Twinkle</label>
+        <div class="sec">
+          <span class="field-label">Photo effects</span>
+          <div class="toggles">
+            <label><input id="kenBurns" type="checkbox" checked /> 🎥 Pan &amp; zoom</label>
+            <label><input id="tilt" type="checkbox" /> 📱 Tilt to move</label>
+            <label><input id="twinkle" type="checkbox" /> ✨ Twinkle</label>
+          </div>
+          <div class="tilt-opts" id="tiltOpts" hidden>
+            <label><input id="headTrack" type="checkbox" /> 🙂 Head tracking (webcam)</label>
+            <span class="hint">On a computer, the mouse and the arrow keys tilt it too.</span>
+          </div>
+          <button id="assemble" type="button">🧩 Build it again</button>
         </div>
-        <div class="tilt-opts" id="tiltOpts" hidden>
-          <label><input id="headTrack" type="checkbox" /> 🙂 Head tracking (webcam)</label>
-          <span class="hint">On a computer, the mouse and the arrow keys tilt it too.</span>
-        </div>
-        <button id="assemble" type="button">🧩 Build it again</button>
-        <div class="poster-box">
-          <span class="field-label">Poster: a sharp, high-detail picture to save</span>
+        <div class="sec poster-box">
+          <span class="field-label">Poster</span>
           <select id="posterSize" aria-label="Poster size">
             <option value="4k">4K (3840 px)</option>
             <option value="wallpaper">Phone wallpaper (1290×2796)</option>
@@ -309,7 +334,7 @@
             <span>Poster detail <output id="posterColsOut"></output></span>
             <input id="posterCols" type="range" min="80" max="400" value="180" />
           </label>
-          <button id="makePoster" type="button" class="primary">🖼 Make poster</button>
+          <button id="makePoster" type="button" class="primary">🖼 Make a sharp poster</button>
         </div>
       </div>
     </section>
@@ -351,6 +376,63 @@
         <button id="posterDownload">Download</button>
         <button id="posterClose">Close</button>
       </div>
+    </div>
+  </div>
+
+  <div class="clip" id="snapSheet" hidden>
+    <div class="clip-card" role="dialog" aria-label="Snapshots">
+      <h2 class="sheet-title">🖼 Snapshots</h2>
+      <p class="clip-info">Kept here (in this tab) until you save them. Tap one to save just that one.</p>
+      <div class="snap-grid" id="snapGrid"></div>
+      <div class="clip-actions">
+        <button id="snapSaveAll" class="primary">Save all</button>
+        <button id="snapClear">Clear</button>
+        <button id="snapClose">Close</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="clip" id="keysSheet" hidden>
+    <div class="clip-card keys-card" role="dialog" aria-label="Keyboard shortcuts">
+      <h2 class="sheet-title">⌨ Keyboard shortcuts</h2>
+      <div class="keys">
+        <section>
+          <h3>Effects (hold; Shift locks)</h3>
+          <dl>
+            <dt><kbd>Q</kbd></dt><dd>⚡ Strobe</dd>
+            <dt><kbd>W</kbd></dt><dd>🔁 Stutter</dd>
+            <dt><kbd>E</kbd></dt><dd>🌈 Hue spin</dd>
+            <dt><kbd>R</kbd></dt><dd>🔍 Zoom</dd>
+            <dt><kbd>Z</kbd></dt><dd>🌗 Invert</dd>
+            <dt><kbd>X</kbd></dt><dd>🪞 Kaleido</dd>
+            <dt><kbd>C</kbd></dt><dd>📼 Glitch</dd>
+            <dt><kbd>V</kbd></dt><dd>🧊 Crunch</dd>
+          </dl>
+        </section>
+        <section>
+          <h3>Show</h3>
+          <dl>
+            <dt><kbd>B</kbd></dt><dd>⬛ Blackout</dd>
+            <dt><kbd>Space</kbd></dt><dd>⏸ Freeze</dd>
+            <dt><kbd>0</kbd></dt><dd>🛟 Safe look</dd>
+            <dt><kbd>1</kbd>–<kbd>9</kbd></dt><dd>🎬 Scenes (Shift saves)</dd>
+            <dt><kbd>K</kbd></dt><dd>🥁 Tap tempo</dd>
+            <dt><kbd>D</kbd></dt><dd>🎲 Randomize</dd>
+            <dt><kbd>T</kbd></dt><dd>🧱 Tetris on/off</dd>
+          </dl>
+        </section>
+        <section>
+          <h3>Other</h3>
+          <dl>
+            <dt><kbd>P</kbd></dt><dd>📸 Snapshot, kept for later: no download mid-show</dd>
+            <dt><kbd>←↑↓→</kbd></dt><dd>📱 Tilt a photo (Tilt to move on)</dd>
+            <dt><kbd>?</kbd></dt><dd>This list</dd>
+            <dt><kbd>Esc</kbd></dt><dd>Close / leave full screen</dd>
+          </dl>
+        </section>
+      </div>
+      <p class="clip-info">Keys work in the output window too. Recording and switching camera have no keys, so they can’t be hit by accident.</p>
+      <button id="keysClose" type="button">Close</button>
     </div>
   </div>
 
@@ -409,7 +491,7 @@
             function () { var r = document.createRange(); r.selectNodeContents(pre); var s = getSelection(); s.removeAllRanges(); s.addRange(r); }
           );
         });
-        dbg('page v30', navigator.userAgent);
+        dbg('page v31', navigator.userAgent);
         dbg('secure=' + window.isSecureContext, 'mediaDevices=' + !!navigator.mediaDevices,
             'getUserMedia=' + !!(navigator.mediaDevices && navigator.mediaDevices.getUserMedia));
         if (navigator.permissions && navigator.permissions.query) {
@@ -430,11 +512,11 @@
       window.addEventListener('unhandledrejection', function (e) { dbg('REJECTION', String(e.reason)); show((e.reason && e.reason.message) || String(e.reason)); });
       window.addEventListener('load', function () {
         dbg('load event, app ready = ' + window.emojiFiedReady);
-        if (window.emojiFiedReady !== '30') show('an old or broken copy of the app loaded. Close this tab and open the link again.');
+        if (window.emojiFiedReady !== '31') show('an old or broken copy of the app loaded. Close this tab and open the link again.');
       });
     })();
   </script>
-  <script src="gif.js?v=30"></script>
-  <script src="app.js?v=30"></script>
+  <script src="gif.js?v=31"></script>
+  <script src="app.js?v=31"></script>
 </body>
 </html>

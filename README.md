@@ -9,7 +9,7 @@ No build step, no dependencies, and no video ever leaves your device.
 - **🎞 Video / GIF**: any video, animated GIF or photo from your Photos or
   Files, looped through the filter. GIFs are decoded by the app itself
   (`gif.js`), so they animate in every browser, including Safari. A video's
-  soundtrack plays, drives *React to sound* (no microphone needed) and goes
+  soundtrack plays, drives 🎵 Beat → 🎤 Sound (no microphone needed) and goes
   into recordings.
   Photos and GIFs get **photo effects**: a slow 🎥 pan & zoom, 📱 tilt to move
   (the phone's motion sensor; on a computer the mouse, the arrow keys or 🙂 head
@@ -44,24 +44,66 @@ the stream. Sharing the tab gets the same result.
   picture builds itself from falling Tetris pieces made of its own glyphs.
   They drop onto the stack bottom row first, turning and sliding a cell at a
   time like the game; the finished picture holds for a few seconds, then the
-  lines clear and new pieces build it again. With 🎹 MIDI on, your playing drops the
-  pieces instead: each note releases a batch (more for a harder hit), low notes
-  on the left and high notes on the right.
+  lines clear and new pieces build it again. With a beat source on (🎵 Beat),
+  the beats and notes drop the pieces instead.
 
-**React to sound** (uses the microphone): *Pulse* makes the glyphs swell with
-loudness, and every beat sends a wave out from the center in a shape (circle, heart,
-spinning star, square, diamond, hexagon or a sweep; off by default; pick
-one or mix them, with optional glow outlines), shifts the hues,
-flashes, shakes and zoom-punches the picture; *Shuffle on beats* switches to a random look on each
-beat, or both. **Sensitivity** and **Effect strength** sliders tune it. While it's on,
-recorded clips include the audio.
+## The controls
 
-**🎹 React to MIDI** (Sound tab; Chrome, Edge or Firefox on a computer, as
-Safari has no Web MIDI): plug in a keyboard or drum pads, or send MIDI from a
-music app. Every note hits like a beat, as hard as it was played (flash, shake,
-zoom punch, beat shapes, shuffles), and its pitch nudges the hues; held notes
-swell the glyphs, the pitch bend wheel shifts the hues and the mod wheel adds
-swell. It works alongside the microphone or on its own.
+A toolbar (⏺ Record · 📸 Photo · ⏸ Pause · ⛶ Full · 📺 TV · ⋯ More), the
+source, style (🎲 randomizes it) and detail, then four tabs:
+
+- **🎨 Look**: match by colour or brightness (or the ink colour for unicode),
+  adjustments (contrast, brightness, saturation, shadows, highlights, with
+  reset), mirror, invert, blank darks and **🧱 Tetris build**.
+- **🎵 Beat**: what drives the effects, and what a beat does.
+  - *Listen to* **🎤 Sound** (the microphone, or a video's or shared tab's own
+    audio, with a sensitivity slider), **🎹 MIDI** (Chrome, Edge or Firefox on
+    a computer: every note hits like a beat as hard as it was played, its pitch
+    nudges the hues, held notes swell, pitch bend shifts the hues, the mod
+    wheel adds swell) and/or **🥁 Tempo** (tap `K`, or MIDI clock from
+    Ableton, Traktor or a drum machine, which wins while it runs, follows
+    Start/Stop and is timed by the messages' own time stamps; the tempo's beat
+    replaces the microphone's).
+  - *On the beat*, the same for every source: **Pulse** (glyphs swell with
+    the loudness or held notes), **Flash** (flash, shake, zoom punch, hue
+    shift), **Tetris drops** (a beat drops a batch of pieces, building a
+    picture in 8 bars; a played note drops them where its pitch says, low on
+    the left), **Shapes** (a wave in a shape on each beat: circle, heart,
+    spinning star, square, diamond, hexagon, sweep or a mix, with optional
+    glow outlines; off by default), **Shuffle the look** every 1–16 beats and
+    **Strength**. Recorded clips include the sound while it's on.
+- **🎬 Live**, for performing:
+  - **📽 Output window**: a clean second window with only the picture (no
+    buttons, toasts or cursor) to drag onto a projector and double-click for
+    full screen; the controls stay here and the keys work in either window. It
+    keeps running if the main window is minimised and reconnects if it reloads.
+  - **Panic**: `B` fades to black and back (with an output window only the
+    output goes black; this window dims, with a label), `Space` freezes, `0`
+    jumps to a safe default look.
+  - **Effects · hold**: punch-ins that play while you hold their key or pad:
+    `Q` ⚡ strobe (6 flashes a second, or on 8th notes with a tempo; mind
+    photosensitive viewers), `W` 🔁 stutter (16ths with a tempo), `E` 🌈 hue
+    spin, `R` 🔍 zoom, `Z` 🌗 invert, `X` 🪞 kaleidoscope, `C` 📼 glitch,
+    `V` 🧊 crunch. The keys mirror the pads; `Shift` (or Shift-click) locks
+    one on. They stack, and never touch posters.
+  - **Scenes**: nine slots for whole looks; `1`–`9` switches, `Shift` +
+    `1`–`9` saves (or click an empty slot). Kept in the browser.
+  - **MIDI controller** (MIDI learn): click *Learn…*, a slider or button
+    (scenes, panic, punch-ins, Tap, 🎲, Tetris), then move a knob or hit a
+    pad. Punch-ins last as long as the pad is held; mapped notes don't also
+    play as music. Kept in the browser; the controller reconnects next time.
+- **🖼 Photo** (photos and GIFs only): pan & zoom, tilt, twinkle, build again,
+  and **posters**.
+
+**Snapshots** (📸 or `P`) are kept in a tray rather than downloaded straight
+away, because a download can pop up a prompt, steal the focus and drop you
+out of full screen mid-show. 📸 shows how many there are; save or share them
+from **🖼 Snapshots** under the toolbar (or ⋯ More) afterwards. Recording and
+switching camera have no keys at all, so a slip of the hand can't start a
+recording or cut the camera. `?` lists every shortcut.
+
+⋯ More also has 🔄 switch camera (also the button over the camera view on
+phones), 📋 copy the frame as text and ⌨ shortcuts.
 
 Layout: on a phone the picture sits above the controls, kept short enough
 that the toolbar always shows. Wide-but-short screens (a phone on its side,
@@ -69,57 +111,14 @@ an unfolded iPhone Duo) get a book layout, the picture on the left page and
 the controls on the right, so the fold runs down the gap between them;
 computers get the picture with a controls sidebar.
 
-**🎬 Live** (for performing): **📽 Output window** opens a clean second
-window with only the picture, no buttons, toasts or cursor, to drag onto a
-projector or second screen and double-click for full screen; the controls stay
-in the main window, and shortcuts work in either. It keeps running if the main
-window is minimised and reconnects if it reloads. **Panic buttons**: `B`
-fades to black and back (with an output window, only the output goes black and
-the main window dims with a label, so you can see what you'll bring back),
-`Space` freezes the frame, `0` jumps to a safe default look. **Scenes**: nine
-slots for whole looks (style, detail, colours, adjustments, Tetris, beat
-shapes...): `1`–`9` switches, `Shift` + `1`–`9` saves (or click an empty slot).
-Scenes are kept in the browser. **Punch-in effects** play while you hold
-their key or button and stop when you let go (`Shift` + key, or Shift-click,
-locks one on): `Q` ⚡ strobe (6 flashes a second; mind photosensitive
-viewers), `W` 🔁 stutter, `E` 🌈 hue spin, `A` 🔍 zoom, `Z` 🌗 invert, `X` 🪞
-kaleidoscope, `C` 📼 glitch, `V` 🧊 crunch (a quarter of the detail). They
-stack, and touch only the live picture, not posters.
-
-**🥁 Tempo**: tap `K` in time (one tap later re-aligns the beat), or send MIDI
-clock from Ableton, Traktor or a drum machine (it wins while it runs, follows
-Start/Stop, and is timed by the messages' own time stamps). With *Sync to
-tempo* on, the beat drives the effects instead of the microphone: flash and
-beat shapes, Tetris drops (a picture builds in 8 bars, sweeping left to
-right) and, if you like, a look shuffle every 1–16 beats. Strobe flashes on
-8th notes (quarter notes above 180 BPM, to stay under 6 a second) and Stutter
-moves on 16ths.
-
-**🎹 MIDI controller** (MIDI learn): click *Learn…*, click a slider (Detail,
-the adjustments, Effect strength) or a button (scenes, panic buttons,
-punch-ins, Tap, 🎲, Tetris), then move a knob or fader or hit a pad. Knobs
-move sliders; pads and CC buttons press buttons, and punch-ins last as long as
-the pad is held. Mapped notes don't also play as music; everything else on the
-controller still does with *React to MIDI* on. Mappings are kept in the
-browser, and the controller reconnects by itself next time.
-
-Front/back camera: the switch button over the camera view (or `F`); mirroring
-follows the camera and recordings carry on through a switch.
-
 Full screen (⛶) fills the screen, using native full screen where the browser
 allows it (iPhone Safari doesn't, so it fills the page), and keeps the screen
-awake. 📺 AirPlay opens the live picture in a native video player with the
+awake. 📺 TV opens the live picture in a native video player with the
 system AirPlay picker, Picture in Picture and true full screen (on iPhone too).
 Whether AirPlay accepts a live, generated stream is up to the OS; if not, the
-player links to Screen Mirroring steps. Recorded clips have an AirPlay button too.
+player links to Screen Mirroring steps. Recorded clips (⏺, up to 60 s; MP4 on
+Safari, with Save/Share to Photos on iPhone) have an AirPlay button too.
 For true full screen on iPhone, use Share → **Add to Home Screen**.
-
-Extras: 🎲 randomize (`D`: random style, ink, detail and tone, sometimes a
-random custom emoji set), detail slider, adjustments (contrast, brightness,
-saturation, shadows, highlights, with reset), invert, mirror, front/back camera
-flip, pause (`Space`), PNG snapshot (`S`), **video clips** (Record button in the controls or `R`, up to 60 s;
-MP4 on Safari, with Save/Share to Photos on iPhone) and **Copy text** to paste
-the frame as plain emoji/unicode text.
 
 ## Run it
 
