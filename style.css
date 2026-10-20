@@ -526,3 +526,81 @@ button:disabled { opacity: 0.5; cursor: default; }
   color: #9fe8a8;
   min-height: 6em;
 }
+
+/* Live: blackout over the picture. On its own the stage goes fully black
+   (it's what the audience sees); with an output window it only dims, with
+   a label, so you can still see what you'll bring back. */
+.blackout {
+  position: absolute;
+  inset: 0;
+  z-index: 3;
+  background: transparent; /* set while fading, so the label stays solid */
+  pointer-events: none;
+  display: grid;
+  place-items: center;
+}
+.blackout span {
+  display: none;
+  padding: 6px 12px;
+  border-radius: 999px;
+  background: #d92d3a;
+  color: #fff;
+  font-size: 13px;
+  font-weight: 600;
+}
+.blackout.labelled.on span { display: block; }
+
+.output-row { display: grid; gap: 6px; }
+.output-row[hidden] { display: none; }
+.output-row button.live { background: #3ddc84; color: #04210f; }
+.live-dot { background: #d92d3a; }
+.panic { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px; }
+.panic button { display: grid; justify-items: center; gap: 3px; padding: 8px 4px; font-size: 13px; }
+@media (hover: none) { .panic kbd { display: none; } } /* no keyboard to press */
+.panic button[aria-pressed="true"] { background: #d92d3a; border-color: #d92d3a; color: #fff; }
+kbd {
+  display: inline-block;
+  padding: 0 4px;
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  font: 11px ui-monospace, Menlo, Consolas, monospace;
+  color: var(--muted);
+}
+.panic button[aria-pressed="true"] kbd { color: #fff; border-color: rgba(255, 255, 255, 0.5); }
+.scenes { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px; }
+.scene {
+  display: grid;
+  gap: 2px;
+  justify-items: start;
+  text-align: left;
+  padding: 7px 8px;
+  min-height: 52px;
+  font-size: 12px;
+  line-height: 1.25;
+}
+.scene b { font-size: 13px; }
+.scene .what { color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 100%; }
+.scene.empty .what { font-style: italic; }
+.scene.current { border-color: var(--accent); }
+.scenes.saving .scene { border-style: dashed; border-color: var(--accent); }
+#sceneSave[aria-pressed="true"] { font-weight: 600; }
+
+/* Punch-in effects: hold to play, like a DJ's effects pads. */
+.punches { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 6px; }
+.punch {
+  display: grid;
+  justify-items: center;
+  gap: 2px;
+  padding: 8px 2px 6px;
+  font-size: 18px;
+  line-height: 1.1;
+  touch-action: none;
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-touch-callout: none;
+}
+.punch .lbl { font-size: 11px; color: var(--muted); white-space: nowrap; }
+.punch.on { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); }
+.punch.on .lbl, .punch.on kbd { color: var(--accent-ink); border-color: rgba(26, 20, 0, 0.4); }
+.punch.latched { box-shadow: inset 0 0 0 2px #fff; }
+@media (hover: none) { .punch kbd { display: none; } }

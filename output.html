@@ -1,0 +1,91 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>emoji·fied output</title>
+  <style>
+    html, body { margin: 0; height: 100%; background: #000; overflow: hidden; }
+    body.idle { cursor: none; }
+    canvas { position: fixed; inset: 0; width: 100%; height: 100%; object-fit: contain; display: block; }
+    .hint {
+      position: fixed;
+      left: 50%;
+      bottom: 24px;
+      transform: translateX(-50%);
+      max-width: calc(100% - 32px);
+      padding: 10px 16px;
+      border-radius: 12px;
+      background: rgba(20, 20, 29, 0.9);
+      color: #ececf3;
+      font: 14px/1.4 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+      text-align: center;
+      transition: opacity 0.4s;
+    }
+    body.idle .hint, body.full .hint { opacity: 0; pointer-events: none; }
+  </style>
+</head>
+<body>
+  <canvas id="c" width="16" height="9"></canvas>
+  <div class="hint" id="hint">Drag this window to the projector or second screen, then double-click it (or press Enter) for full screen.</div>
+  <script>
+    'use strict';
+    // The audience's window: only the picture. The emoji·fied window that
+    // opened it draws every frame into the canvas above and keeps the
+    // controls. Everything here just looks after the window itself.
+    const hint = document.getElementById('hint');
+    const app = () => {
+      try {
+        return window.opener && !window.opener.closed ? window.opener.emojiFiedOutput : null;
+      } catch {
+        return null;
+      }
+    };
+
+    // Hook up to the controls window, and again if it reloads.
+    function attach() {
+      const a = app();
+      if (a) a.attach(window);
+      else hint.textContent = 'The emoji·fied window was closed. Open it again and click 📽 Output window.';
+    }
+    attach();
+    setInterval(attach, 1000);
+
+    // Keep frames coming even if the controls window is minimised or
+    // hidden behind something, where the browser would pause it.
+    (function pump() {
+      app()?.pump();
+      requestAnimationFrame(pump);
+    })();
+
+    // Hide the cursor once the mouse rests.
+    let idleTimer = 0;
+    function wake() {
+      document.body.classList.remove('idle');
+      clearTimeout(idleTimer);
+      idleTimer = setTimeout(() => document.body.classList.add('idle'), 2000);
+    }
+    addEventListener('mousemove', wake);
+    wake();
+
+    function toggleFull() {
+      if (document.fullscreenElement) document.exitFullscreen();
+      else document.documentElement.requestFullscreen?.().catch(() => {});
+    }
+    addEventListener('dblclick', toggleFull);
+    document.addEventListener('fullscreenchange', () => document.body.classList.toggle('full', !!document.fullscreenElement));
+
+    // Shortcuts work here too (blackout, freeze, scenes...), so you can
+    // perform from whichever window has focus.
+    addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') return toggleFull();
+      if (e.key === 'Escape') return;
+      if (e.key === ' ') e.preventDefault();
+      app()?.key({ key: e.key, code: e.code, repeat: e.repeat, shiftKey: e.shiftKey, metaKey: e.metaKey, ctrlKey: e.ctrlKey, altKey: e.altKey });
+    });
+    // Punch-in effects last as long as their key is held.
+    addEventListener('keyup', (e) => app()?.keyup({ key: e.key, code: e.code }));
+    addEventListener('blur', () => app()?.release());
+  </script>
+</body>
+</html>
