@@ -126,6 +126,18 @@ const ui = {
   invert: $('#invert'),
   blank: $('#blank'),
   tetris: $('#tetris'),
+  blackout: $('#blackout'),
+  liveDot: $('#liveDot'),
+  outputRow: $('#outputRow'),
+  outputBtn: $('#outputBtn'),
+  outputClose: $('#outputClose'),
+  outputStatus: $('#outputStatus'),
+  blackoutBtn: $('#blackoutBtn'),
+  freezeBtn: $('#freezeBtn'),
+  safeBtn: $('#safeBtn'),
+  sceneSave: $('#sceneSave'),
+  scenes: $('#scenes'),
+  scenesHint: $('#scenesHint'),
   blankField: $('#blankField'),
   flip: $('#flip'),
   flipFab: $('#flipFab'),
@@ -698,7 +710,7 @@ function renderText(j) {
 let frames = 0;
 let fpsT = performance.now();
 
-function loop() {
+function frame() {
   // Show the on-camera record button only while the live view is up.
   const showFlip = state.source === 'camera' && !!state.stream && ui.overlay.hidden && state.cameraCount !== 1;
   if (ui.flipFab.hidden === showFlip) ui.flipFab.hidden = !showFlip;
@@ -721,6 +733,12 @@ function loop() {
     frames = 0;
     fpsT = now;
   }
+  tickLive(now);
+}
+
+function loop() {
+  show.mainRaf = performance.now();
+  frame();
   requestAnimationFrame(loop);
 }
 
@@ -2731,7 +2749,291 @@ async function showOnTv() {
 }
 
 // ---------------------------------------------------------------------------
-// Tabs: Look / Sound / Photo, one open at a time (the choice is remembered)
+// Live: output window, panic keys and scenes
+// ---------------------------------------------------------------------------
+
+const show = {
+  win: null, // the output window, once open
+  canvas: null, // its canvas, once it has loaded and connected
+  ctx: null,
+  mainRaf: 0, // when this window last got an animation frame
+  blackOn: false,
+  black: 0, // the blackout fade, 0..1
+  shownBlack: -1,
+  t: 0,
+  saving: false, // the next scene slot clicked saves instead of recalls
+  scene: 0, // the scene last recalled or saved
+  scenes: {}, // slot (1..9) -> saved look
+};
+const BLACKOUT_FADE_MS = 600;
+const OUTPUT_IDLE_TEXT = ui.outputStatus.textContent;
+const TOUCH_ONLY = matchMedia('(hover: none)').matches;
+const SCENES_HINT = TOUCH_ONLY
+  ? 'Tap an empty slot to save the current look there, a full one to switch to it. “Save to a slot…” saves over one.'
+  : 'Press 1–9 to switch to a scene, Shift + 1–9 to save the current look there. Clicking an empty slot saves to it too.';
+
+// ---- Output window ---------------------------------------------------------
+// A second window with only the picture, for the projector or a second
+// screen. It's the same site, so every frame is simply drawn into its
+// canvas. The blackout fades there, so this window can keep showing the
+// picture you'll bring back.
+
+function openOutput() {
+  if (show.win && !show.win.closed) {
+    show.win.focus();
+    return;
+  }
+  const win = window.open('output.html?v=29', 'emojiFiedOutput', 'popup,width=960,height=540');
+  if (!win) {
+    toast('Allow pop-ups for this site to open the output window');
+    return;
+  }
+  show.win = win; // it connects itself (emojiFiedOutput.attach) once loaded
+  dbg('output window opened');
+}
+
+function closeOutput() {
+  show.win?.close();
+  detachOutput();
+}
+
+function detachOutput() {
+  show.win = show.canvas = show.ctx = null;
+  updateLiveUI();
+}
+
+// What the output window calls, as soon as it loads and every second (so
+// it reconnects if this window reloads), every frame, and on key presses.
+window.emojiFiedOutput = {
+  attach(win) {
+    const c = win.document.getElementById('c');
+    if (show.win === win && show.canvas === c) return;
+    show.win = win;
+    show.canvas = c;
+    show.ctx = c.getContext('2d');
+    updateLiveUI();
+    toast('📽 Output window connected');
+    dbg('output window connected');
+  },
+  // Browsers pause a minimised or hidden window; the output window keeps
+  // the frames coming then.
+  pump() {
+    if (performance.now() - show.mainRaf > 150) frame();
+  },
+  key(e) {
+    onKey({ ...e, target: null, preventDefault() {} });
+  },
+};
+
+function drawOutput() {
+  if (!show.win) return;
+  if (show.win.closed) {
+    detachOutput();
+    toast('📽 Output window closed');
+    return;
+  }
+  const c = show.canvas;
+  if (!c) return;
+  if (c.width !== out.width || c.height !== out.height) {
+    c.width = out.width;
+    c.height = out.height;
+  }
+  show.ctx.drawImage(out, 0, 0);
+  if (show.black > 0.002) {
+    show.ctx.fillStyle = `rgba(0, 0, 0, ${show.black})`;
+    show.ctx.fillRect(0, 0, c.width, c.height);
+  }
+}
+
+// Every frame: ease the blackout and feed the output window. Frozen or
+// not, so a blackout still fades over a frozen frame.
+function tickLive(now) {
+  const dt = Math.min(100, now - (show.t || now));
+  show.t = now;
+  const target = show.blackOn ? 1 : 0;
+  if (show.black !== target) {
+    const step = dt / BLACKOUT_FADE_MS;
+    show.black = target ? Math.min(1, show.black + step) : Math.max(0, show.black - step);
+  }
+  // With an output window this one only dims, so you can still see.
+  const shown = show.black * (show.canvas ? 0.6 : 1);
+  if (shown !== show.shownBlack) {
+    show.shownBlack = shown;
+    ui.blackout.style.backgroundColor = `rgba(0, 0, 0, ${shown.toFixed(3)})`;
+  }
+  drawOutput();
+}
+
+function updateLiveUI() {
+  const on = !!show.canvas;
+  ui.outputBtn.textContent = on ? '📽 Output is live · bring it to the front' : '📽 Open output window';
+  ui.outputBtn.classList.toggle('live', on);
+  ui.outputClose.hidden = !on;
+  ui.outputStatus.textContent = on
+    ? 'The audience sees the output window. Drag it to the projector and double-click it for full screen. The keys below work in either window.'
+    : OUTPUT_IDLE_TEXT;
+  ui.blackout.classList.toggle('labelled', on);
+  ui.blackout.classList.toggle('on', show.blackOn);
+  ui.blackoutBtn.setAttribute('aria-pressed', String(show.blackOn));
+  ui.liveDot.hidden = !on && !show.blackOn;
+  show.shownBlack = -1; // the dimming depends on the output window
+}
+
+// A toast for the performer. In full screen without an output window the
+// audience is watching this screen, so stay quiet there.
+function liveToast(msg) {
+  if (!isFull() || show.canvas) toast(msg);
+}
+
+// ---- Panic keys -------------------------------------------------------------
+
+function toggleBlackout(on = !show.blackOn) {
+  show.blackOn = on;
+  updateLiveUI();
+  dbg(`blackout ${on ? 'on' : 'off'}`);
+}
+
+// Back to the plain default look: no Tetris, shapes or look shuffling.
+function safeLook() {
+  const scene = {};
+  for (const [k, el] of Object.entries(sceneFields())) {
+    if (k === 'match') continue; // the default set picks its own
+    scene[k] = el.type === 'checkbox' ? el.defaultChecked
+      : el.tagName === 'SELECT' ? ([...el.options].find((o) => o.defaultSelected) || el.options[0]).value
+      : el.defaultValue;
+  }
+  applyScene(scene);
+  if (ui.sound.value === 'shuffle' || ui.sound.value === 'both') {
+    ui.sound.value = ui.sound.value === 'both' ? 'pulse' : 'off';
+    onSoundModeChange();
+  }
+  show.scene = 0;
+  renderScenes();
+  liveToast('🛟 Safe look');
+}
+
+// ---- Scenes -----------------------------------------------------------------
+// Nine slots for whole looks, recalled with the number keys (or a tap),
+// saved with Shift + number. They're kept in this browser.
+
+const sceneFields = () => ({
+  style: ui.style, custom: ui.custom, cols: ui.cols, match: ui.match, ink: ui.ink,
+  contrast: ui.contrast, bright: ui.bright, sat: ui.sat, shadows: ui.shadows, highlights: ui.highlights,
+  invert: ui.invert, blank: ui.blank, tetris: ui.tetris,
+  fxStrength: ui.fxStrength, beatShape: ui.beatShape, beatOutline: ui.beatOutline,
+  twinkle: ui.twinkle, kenBurns: ui.kenBurns,
+});
+
+function describeLook() {
+  const name = ui.style.value === 'custom' ? ui.custom.value.slice(0, 12) : ui.style.selectedOptions[0]?.textContent || ui.style.value;
+  const bits = [name];
+  if (state.kind !== 'emoji') bits.push(ui.ink.selectedOptions[0]?.textContent);
+  if (ui.invert.checked) bits.push('inverted');
+  if (ui.tetris.checked) bits.push('🧱');
+  return bits.join(' · ');
+}
+
+function captureScene() {
+  const scene = { label: describeLook() };
+  for (const [k, el] of Object.entries(sceneFields())) scene[k] = el.type === 'checkbox' ? el.checked : el.value;
+  return scene;
+}
+
+function applyScene(scene) {
+  const tetrisWas = ui.tetris.checked;
+  for (const [k, el] of Object.entries(sceneFields())) {
+    if (!(k in scene) || k === 'match') continue;
+    if (el.type === 'checkbox') el.checked = !!scene[k];
+    else el.value = scene[k];
+  }
+  applyStyle(); // also picks the set's own "Match by"...
+  if (scene.match && state.kind === 'emoji') ui.match.value = scene.match; // ...unless saved
+  syncLabels();
+  onBeatShapeChange();
+  if (ui.tetris.checked !== tetrisWas) tetris.plan = null;
+  if (state.paused) render();
+}
+
+function loadScenes() {
+  try {
+    show.scenes = JSON.parse(localStorage.getItem('emojiFiedScenes') || '{}') || {};
+  } catch {
+    show.scenes = {};
+  }
+}
+
+function storeScenes() {
+  try {
+    localStorage.setItem('emojiFiedScenes', JSON.stringify(show.scenes));
+  } catch {
+    toast('Couldn’t keep the scene: this browser blocks storage');
+  }
+}
+
+function recallScene(n) {
+  const scene = show.scenes[n];
+  if (!scene) {
+    liveToast(`Scene ${n} is empty: Shift + ${n} saves the current look there`);
+    return;
+  }
+  applyScene(scene);
+  show.scene = n;
+  renderScenes();
+  liveToast(`🎬 ${n} · ${scene.label}`);
+  dbg(`scene ${n} recalled: ${scene.label}`);
+}
+
+function saveScene(n) {
+  show.scenes[n] = captureScene();
+  storeScenes();
+  show.scene = n;
+  setSaving(false);
+  liveToast(`💾 Saved to ${n} · ${show.scenes[n].label}`);
+}
+
+function setSaving(on) {
+  show.saving = on;
+  ui.sceneSave.setAttribute('aria-pressed', String(on));
+  ui.sceneSave.textContent = on ? 'Cancel' : '💾 Save to a slot…';
+  ui.scenesHint.textContent = on ? 'Pick a slot to save the current look there.' : SCENES_HINT;
+  renderScenes();
+}
+
+function renderScenes() {
+  ui.scenes.classList.toggle('saving', show.saving);
+  ui.scenes.replaceChildren(
+    ...Array.from({ length: 9 }, (_, i) => {
+      const n = i + 1, scene = show.scenes[n];
+      const b = document.createElement('button');
+      b.type = 'button';
+      b.className = `scene${scene ? '' : ' empty'}${show.scene === n ? ' current' : ''}`;
+      b.title = scene ? `${scene.label} (${n}; Shift + ${n} to save over it)` : `Empty: click or press Shift + ${n} to save the current look`;
+      const num = document.createElement('b');
+      num.textContent = n;
+      const what = document.createElement('span');
+      what.className = 'what';
+      what.textContent = scene ? scene.label : 'Empty';
+      b.append(num, what);
+      // An empty slot saves straight away; a full one needs Save mode.
+      b.addEventListener('click', () => (show.saving || !scene ? saveScene(n) : recallScene(n)));
+      return b;
+    })
+  );
+}
+
+ui.outputRow.hidden = TOUCH_ONLY; // phones and tablets: no second window
+ui.scenesHint.textContent = SCENES_HINT;
+ui.outputBtn.addEventListener('click', openOutput);
+ui.outputClose.addEventListener('click', closeOutput);
+ui.blackoutBtn.addEventListener('click', () => toggleBlackout());
+ui.freezeBtn.addEventListener('click', () => ui.pause.click());
+ui.safeBtn.addEventListener('click', safeLook);
+ui.sceneSave.addEventListener('click', () => setSaving(!show.saving));
+loadScenes();
+renderScenes();
+
+// ---------------------------------------------------------------------------
+// Tabs: Look / Sound / Photo / Live, one open at a time (the choice is remembered)
 // ---------------------------------------------------------------------------
 
 let currentTab = 'look';
@@ -2835,6 +3137,7 @@ for (const ev of ['pointerdown', 'pointermove', 'touchstart']) {
 ui.pause.addEventListener('click', () => {
   state.paused = !state.paused;
   setTool(ui.pause, state.paused ? '▶' : '⏸', state.paused ? 'Resume' : 'Pause');
+  ui.freezeBtn.setAttribute('aria-pressed', String(state.paused));
   if (state.source === 'file' && state.fileKind === 'video') state.paused ? video.pause() : video.play().catch(() => {});
 });
 for (const b of ui.sourceButtons) {
@@ -2935,8 +3238,20 @@ document.addEventListener('keydown', (e) => {
 document.addEventListener('keyup', (e) => motion.keys.delete(e.key));
 window.addEventListener('blur', () => motion.keys.clear());
 
-document.addEventListener('keydown', (e) => {
-  if (e.target.matches('input[type="text"], select')) return;
+// Shortcuts; also called by the output window for keys pressed there.
+function onKey(e) {
+  if (e.target?.matches?.('input[type="text"], select')) return;
+  if (e.metaKey || e.ctrlKey || e.altKey) return; // leave the browser's own shortcuts alone
+  // Number row or keypad: 1-9 scenes (Shift saves), 0 the safe look.
+  const digit = /^(?:Digit|Numpad)(\d)$/.exec(e.code || '')?.[1];
+  if (digit) {
+    const n = +digit;
+    if (n === 0) safeLook();
+    else if (e.shiftKey) saveScene(n);
+    else recallScene(n);
+    return;
+  }
+  if (e.key === 'b') toggleBlackout();
   if (e.key === ' ') { e.preventDefault(); ui.pause.click(); }
   if (e.key === 's') snapshot();
   if (e.key === 'r') ui.record.click();
@@ -2947,7 +3262,8 @@ document.addEventListener('keydown', (e) => {
   else if (e.key === 'Escape' && !ui.player.hidden) closePlayer();
   else if (e.key === 'Escape' && !ui.clip.hidden) closeClip();
   else if (e.key === 'Escape' && document.body.classList.contains('immersive')) exitFullscreen();
-});
+}
+document.addEventListener('keydown', onKey);
 
 syncLabels();
 requestAnimationFrame(loop);
@@ -2956,5 +3272,5 @@ try {
 } catch (err) {
   ui.error.textContent = `Setup failed: ${err.message}`;
 }
-window.emojiFiedReady = '28';
-dbg('app.js v28 initialised');
+window.emojiFiedReady = '29';
+dbg('app.js v29 initialised');

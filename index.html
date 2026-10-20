@@ -13,7 +13,7 @@
   <link rel="apple-touch-icon" href="icons/icon-180.png" />
   <title>Emoji-fied</title>
   <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🤩</text></svg>" />
-  <link rel="stylesheet" href="style.css?v=28" />
+  <link rel="stylesheet" href="style.css?v=29" />
 </head>
 <body>
   <header>
@@ -25,6 +25,7 @@
     <div class="stage" id="stage">
       <canvas id="out" aria-label="Camera rendered as emoji or unicode characters"></canvas>
       <video id="video" playsinline muted autoplay></video>
+      <div class="blackout" id="blackout" aria-hidden="true"><span>⬛ Blackout on the output · B to bring it back</span></div>
 
       <button id="exitFull" class="exit-full" type="button" aria-label="Exit full screen" title="Exit full screen (Esc)" hidden>✕</button>
 
@@ -56,7 +57,7 @@
           </div>
           <p class="status" id="status" aria-live="polite"></p>
           <p class="error" id="error" role="alert"></p>
-          <p class="note">Everything runs in your browser. No video leaves your device. <span class="version">v28</span></p>
+          <p class="note">Everything runs in your browser. No video leaves your device. <span class="version">v29</span></p>
         </div>
       </div>
     </div>
@@ -128,6 +129,7 @@
         <button type="button" role="tab" data-tab="look" aria-selected="true">🎨 Look</button>
         <button type="button" role="tab" data-tab="sound" aria-selected="false">🎤 Sound<span class="tab-dot" id="soundDot" hidden></span></button>
         <button type="button" role="tab" data-tab="photo" aria-selected="false" id="photoTab" hidden>🖼 Photo</button>
+        <button type="button" role="tab" data-tab="live" aria-selected="false">🎬 Live<span class="tab-dot live-dot" id="liveDot" hidden></span></button>
       </div>
 
       <div class="tab-panel" data-panel="look" role="tabpanel">
@@ -225,6 +227,26 @@
           </div>
         </div>
         </div>
+      </div>
+
+      <div class="tab-panel live-panel" data-panel="live" role="tabpanel" hidden>
+        <div class="output-row" id="outputRow">
+          <button id="outputBtn" type="button" class="primary">📽 Open output window</button>
+          <button id="outputClose" type="button" class="reset" hidden>Close the output window</button>
+          <span class="hint" id="outputStatus">A clean window for the projector or a second screen: only the picture, no buttons or cursor. Drag it there and double-click it for full screen; the controls stay here.</span>
+        </div>
+        <span class="field-label">Panic buttons</span>
+        <div class="panic">
+          <button id="blackoutBtn" type="button" aria-pressed="false">⬛ Blackout <kbd>B</kbd></button>
+          <button id="freezeBtn" type="button" aria-pressed="false">⏸ Freeze <kbd>Space</kbd></button>
+          <button id="safeBtn" type="button">🛟 Safe look <kbd>0</kbd></button>
+        </div>
+        <div class="adjust-head">
+          <span class="field-label">Scenes</span>
+          <button id="sceneSave" type="button" class="reset" aria-pressed="false">💾 Save to a slot…</button>
+        </div>
+        <div class="scenes" id="scenes"></div>
+        <span class="hint" id="scenesHint">Press 1–9 to switch to a scene, Shift + 1–9 to save the current look there.</span>
       </div>
 
       <div class="tab-panel photo-panel" id="photoPanel" data-panel="photo" role="tabpanel" hidden>
@@ -350,7 +372,7 @@
             function () { var r = document.createRange(); r.selectNodeContents(pre); var s = getSelection(); s.removeAllRanges(); s.addRange(r); }
           );
         });
-        dbg('page v28', navigator.userAgent);
+        dbg('page v29', navigator.userAgent);
         dbg('secure=' + window.isSecureContext, 'mediaDevices=' + !!navigator.mediaDevices,
             'getUserMedia=' + !!(navigator.mediaDevices && navigator.mediaDevices.getUserMedia));
         if (navigator.permissions && navigator.permissions.query) {
@@ -371,11 +393,11 @@
       window.addEventListener('unhandledrejection', function (e) { dbg('REJECTION', String(e.reason)); show((e.reason && e.reason.message) || String(e.reason)); });
       window.addEventListener('load', function () {
         dbg('load event, app ready = ' + window.emojiFiedReady);
-        if (window.emojiFiedReady !== '28') show('an old or broken copy of the app loaded. Close this tab and open the link again.');
+        if (window.emojiFiedReady !== '29') show('an old or broken copy of the app loaded. Close this tab and open the link again.');
       });
     })();
   </script>
-  <script src="gif.js?v=28"></script>
-  <script src="app.js?v=28"></script>
+  <script src="gif.js?v=29"></script>
+  <script src="app.js?v=29"></script>
 </body>
 </html>
