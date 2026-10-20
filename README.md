@@ -63,6 +63,12 @@ zoom punch, beat shapes, shuffles), and its pitch nudges the hues; held notes
 swell the glyphs, the pitch bend wheel shifts the hues and the mod wheel adds
 swell. It works alongside the microphone or on its own.
 
+Layout: on a phone the picture sits above the controls, kept short enough
+that the toolbar always shows. Wide-but-short screens (a phone on its side,
+an unfolded iPhone Duo) get a book layout, the picture on the left page and
+the controls on the right, so the fold runs down the gap between them;
+computers get the picture with a controls sidebar.
+
 Front/back camera: the switch button over the camera view (or `F`); mirroring
 follows the camera and recordings carry on through a switch.
 

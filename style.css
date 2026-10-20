@@ -24,7 +24,7 @@ header {
   display: flex;
   align-items: baseline;
   justify-content: space-between;
-  padding: 14px 16px 6px;
+  padding: 14px max(16px, env(safe-area-inset-right)) 6px max(16px, env(safe-area-inset-left));
   max-width: 1200px;
   margin: 0 auto;
 }
@@ -44,13 +44,22 @@ h1 span { color: var(--accent); }
 main {
   max-width: 1200px;
   margin: 0 auto;
-  padding: 8px 16px 32px;
+  /* Clear the camera cutout when a phone is on its side. */
+  padding: 8px max(16px, env(safe-area-inset-right)) max(32px, env(safe-area-inset-bottom)) max(16px, env(safe-area-inset-left));
   display: grid;
   gap: 16px;
 }
 
-@media (min-width: 960px) {
+/* Side by side: computers, and wide-but-short screens such as a phone on
+   its side or an unfolded iPhone Duo (890 x 626). */
+@media (min-width: 960px), (min-width: 640px) and (orientation: landscape) {
   main { grid-template-columns: 1fr 340px; align-items: start; }
+}
+/* Below computer widths it's a book: two equal pages, the picture on the
+   left and the controls on the right, so a foldable's crease runs down the
+   gap between them rather than through the picture or a control. */
+@media (max-width: 959px) and (min-width: 640px) and (orientation: landscape) {
+  main { grid-template-columns: 1fr 1fr; }
 }
 
 .stage {
@@ -64,14 +73,31 @@ main {
   place-items: center;
 }
 
-/* Side-by-side layout (computers): the controls column runs long, so the
-   picture sticks to the top of the window while you scroll it, capped to
-   the window height so tall pictures still fit. */
-@media (min-width: 960px) {
+/* Stacked (phones, a folded iPhone Duo): keep the picture short enough
+   that the toolbar shows below it, however tall the video is. svh is the
+   height with Safari's toolbars showing. */
+.stage {
+  max-height: calc(100vh - 140px);
+  max-height: calc(100svh - 140px);
+  justify-self: center; /* centred when the height cap narrows it */
+}
+
+/* Side by side: the controls column runs long, so the picture sticks to
+   the top of the window while you scroll it, capped to the window height
+   so tall pictures still fit. */
+@media (min-width: 960px), (min-width: 640px) and (orientation: landscape) {
   .stage {
     position: sticky;
     top: 16px;
     max-height: calc(100vh - 32px);
+    max-height: calc(100svh - 32px);
+  }
+}
+/* Short screens: also leave room for the header above it. */
+@media (max-height: 700px) and (min-width: 640px) and (orientation: landscape) {
+  .stage {
+    max-height: calc(100vh - 72px);
+    max-height: calc(100svh - 72px);
   }
 }
 
