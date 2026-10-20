@@ -79,7 +79,12 @@ the main window dims with a label, so you can see what you'll bring back),
 `Space` freezes the frame, `0` jumps to a safe default look. **Scenes**: nine
 slots for whole looks (style, detail, colours, adjustments, Tetris, beat
 shapes...): `1`–`9` switches, `Shift` + `1`–`9` saves (or click an empty slot).
-Scenes are kept in the browser.
+Scenes are kept in the browser. **Punch-in effects** play while you hold
+their key or button and stop when you let go (`Shift` + key, or Shift-click,
+locks one on): `Q` ⚡ strobe (6 flashes a second; mind photosensitive
+viewers), `W` 🔁 stutter, `E` 🌈 hue spin, `A` 🔍 zoom, `Z` 🌗 invert, `X` 🪞
+kaleidoscope, `C` 📼 glitch, `V` 🧊 crunch (a quarter of the detail). They
+stack, and touch only the live picture, not posters.
 
 Front/back camera: the switch button over the camera view (or `F`); mirroring
 follows the camera and recordings carry on through a switch.

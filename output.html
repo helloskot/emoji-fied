@@ -81,8 +81,11 @@
       if (e.key === 'Enter') return toggleFull();
       if (e.key === 'Escape') return;
       if (e.key === ' ') e.preventDefault();
-      app()?.key({ key: e.key, code: e.code, shiftKey: e.shiftKey, metaKey: e.metaKey, ctrlKey: e.ctrlKey, altKey: e.altKey });
+      app()?.key({ key: e.key, code: e.code, repeat: e.repeat, shiftKey: e.shiftKey, metaKey: e.metaKey, ctrlKey: e.ctrlKey, altKey: e.altKey });
     });
+    // Punch-in effects last as long as their key is held.
+    addEventListener('keyup', (e) => app()?.keyup({ key: e.key, code: e.code }));
+    addEventListener('blur', () => app()?.release());
   </script>
 </body>
 </html>

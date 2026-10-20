@@ -584,3 +584,23 @@ kbd {
 .scene.current { border-color: var(--accent); }
 .scenes.saving .scene { border-style: dashed; border-color: var(--accent); }
 #sceneSave[aria-pressed="true"] { font-weight: 600; }
+
+/* Punch-in effects: hold to play, like a DJ's effects pads. */
+.punches { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 6px; }
+.punch {
+  display: grid;
+  justify-items: center;
+  gap: 2px;
+  padding: 8px 2px 6px;
+  font-size: 18px;
+  line-height: 1.1;
+  touch-action: none;
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-touch-callout: none;
+}
+.punch .lbl { font-size: 11px; color: var(--muted); white-space: nowrap; }
+.punch.on { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); }
+.punch.on .lbl, .punch.on kbd { color: var(--accent-ink); border-color: rgba(26, 20, 0, 0.4); }
+.punch.latched { box-shadow: inset 0 0 0 2px #fff; }
+@media (hover: none) { .punch kbd { display: none; } }

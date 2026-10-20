@@ -138,6 +138,8 @@ const ui = {
   sceneSave: $('#sceneSave'),
   scenes: $('#scenes'),
   scenesHint: $('#scenesHint'),
+  punches: $('#punches'),
+  punchHint: $('#punchHint'),
   blankField: $('#blankField'),
   flip: $('#flip'),
   flipFab: $('#flipFab'),
@@ -486,7 +488,7 @@ const BAYER4 = [0, 8, 2, 10, 12, 4, 14, 6, 3, 11, 1, 9, 15, 7, 13, 5].map((v) =>
 // Draw the current frame (or the `crop` window of it) into a sample canvas,
 // one pixel per cell (2x4 for braille), and apply the adjustments in place.
 // Used for the live view and, at much higher detail, for posters.
-function sampleFrame(sc, sx, crop, fx, mirror) {
+function sampleFrame(sc, sx, crop, fx, mirror, punched) {
   const sw = sc.width, sh = sc.height;
   sx.save();
   sx.imageSmoothingEnabled = true;
@@ -501,20 +503,23 @@ function sampleFrame(sc, sx, crop, fx, mirror) {
   sx.drawImage(frameEl(), crop[0], crop[1], crop[2], crop[3], 0, 0, sw, sh);
   sx.restore();
   const img = sx.getImageData(0, 0, sw, sh);
-  adjustPixels(img.data, fx);
+  adjustPixels(img.data, fx, punched);
+  if (punched) punchPixels(img.data, sw, sh);
   // Written back so the full-colour tint pass sees the adjusted colours.
   sx.putImageData(img, 0, 0);
   return img.data;
 }
 
 // Contrast, brightness, saturation, shadows/highlights, invert, plus the
-// sound effects' flash and hue shift.
-function adjustPixels(d, fx) {
+// sound effects' flash and hue shift and (live, not posters) the punch-in
+// hue spin and invert.
+function adjustPixels(d, fx, punched) {
   const c = +ui.contrast.value;
   const br = (+ui.bright.value + (fx ? fx.swell * 0.06 + fx.kick * 0.22 : 0)) * 255;
   const sat = +ui.sat.value * (fx ? 1 + fx.kick * 0.8 : 1);
   // Beat hue shift: a luminance-preserving hue rotation matrix.
-  const hue = fx && Math.abs(fx.hue) > 0.5 ? (fx.hue * Math.PI) / 180 : 0;
+  const hueDeg = (fx ? fx.hue : 0) + (punched ? punchHue() : 0);
+  const hue = Math.abs(hueDeg) > 0.5 ? (hueDeg * Math.PI) / 180 : 0;
   const hc = Math.cos(hue), hs = Math.sin(hue);
   const m00 = 0.213 + hc * 0.787 - hs * 0.213, m01 = 0.715 - hc * 0.715 - hs * 0.715, m02 = 0.072 - hc * 0.072 + hs * 0.928;
   const m10 = 0.213 - hc * 0.213 + hs * 0.143, m11 = 0.715 + hc * 0.285 + hs * 0.14, m12 = 0.072 - hc * 0.072 - hs * 0.283;
@@ -522,7 +527,7 @@ function adjustPixels(d, fx) {
   const shd = +ui.shadows.value;
   const hil = +ui.highlights.value;
   const tone = shd !== 0 || hil !== 0;
-  const inv = ui.invert.checked;
+  const inv = ui.invert.checked !== (punched && punchOn('invert'));
   for (let p = 0; p < d.length; p += 4) {
     let r = d[p], g = d[p + 1], b = d[p + 2];
     // Shadows / highlights: lift or lower tones, fading out smoothly so
@@ -562,7 +567,7 @@ function viewCrop() {
 }
 
 function grabFrame() {
-  return sampleFrame(sample, sctx, viewCrop(), state.fx, ui.mirror.checked);
+  return sampleFrame(sample, sctx, punchCrop(viewCrop()), state.fx, ui.mirror.checked, true);
 }
 
 function render() {
@@ -718,7 +723,7 @@ function frame() {
   trackHead(performance.now());
   if (rec.recorder) copyFrameToRecording();
   gifTick(performance.now());
-  if (!state.paused && frameReady()) {
+  if (!state.paused && frameReady() && !stutterHold()) {
     render();
     if (!frames && !loop.logged) {
       loop.logged = true;
@@ -2823,9 +2828,15 @@ window.emojiFiedOutput = {
   key(e) {
     onKey({ ...e, target: null, preventDefault() {} });
   },
+  keyup(e) {
+    onKeyUp(e);
+  },
+  release() {
+    releasePunches();
+  },
 };
 
-function drawOutput() {
+function drawOutput(dark) {
   if (!show.win) return;
   if (show.win.closed) {
     detachOutput();
@@ -2839,8 +2850,8 @@ function drawOutput() {
     c.height = out.height;
   }
   show.ctx.drawImage(out, 0, 0);
-  if (show.black > 0.002) {
-    show.ctx.fillStyle = `rgba(0, 0, 0, ${show.black})`;
+  if (dark > 0.002) {
+    show.ctx.fillStyle = `rgba(0, 0, 0, ${dark})`;
     show.ctx.fillRect(0, 0, c.width, c.height);
   }
 }
@@ -2855,13 +2866,16 @@ function tickLive(now) {
     const step = dt / BLACKOUT_FADE_MS;
     show.black = target ? Math.min(1, show.black + step) : Math.max(0, show.black - step);
   }
+  // The strobe punch-in blacks out every other beat of its own (6 Hz).
+  const strobeDark = punchOn('strobe') && Math.floor((now - punch.strobeAt) / STROBE_HALF_MS) % 2 === 0;
+  const dark = strobeDark ? 1 : show.black;
   // With an output window this one only dims, so you can still see.
-  const shown = show.black * (show.canvas ? 0.6 : 1);
+  const shown = dark * (show.canvas ? 0.6 : 1);
   if (shown !== show.shownBlack) {
     show.shownBlack = shown;
     ui.blackout.style.backgroundColor = `rgba(0, 0, 0, ${shown.toFixed(3)})`;
   }
-  drawOutput();
+  drawOutput(dark);
 }
 
 function updateLiveUI() {
@@ -2895,6 +2909,7 @@ function toggleBlackout(on = !show.blackOn) {
 
 // Back to the plain default look: no Tetris, shapes or look shuffling.
 function safeLook() {
+  releasePunches(true);
   const scene = {};
   for (const [k, el] of Object.entries(sceneFields())) {
     if (k === 'match') continue; // the default set picks its own
@@ -2910,6 +2925,200 @@ function safeLook() {
   show.scene = 0;
   renderScenes();
   liveToast('🛟 Safe look');
+}
+
+// ---- Punch-in effects ---------------------------------------------------------
+// Momentary effects, like a DJ's: on while a key or button is held, off as
+// soon as it's let go. Shift + the key (or Shift-click) latches one on until
+// it's pressed again. They change only the live picture, never posters.
+
+const PUNCHES = [
+  { id: 'strobe', key: 'q', icon: '⚡', label: 'Strobe', title: 'Flashes the picture on and off, 6 times a second' },
+  { id: 'stutter', key: 'w', icon: '🔁', label: 'Stutter', title: 'Choppy: the picture only moves 8 times a second' },
+  { id: 'hue', key: 'e', icon: '🌈', label: 'Hue spin', title: 'Spins the colours round the rainbow' },
+  { id: 'zoom', key: 'a', icon: '🔍', label: 'Zoom', title: 'Zooms into the middle of the picture' },
+  { id: 'invert', key: 'z', icon: '🌗', label: 'Invert', title: 'Flips the picture to its negative' },
+  { id: 'kaleido', key: 'x', icon: '🪞', label: 'Kaleido', title: 'Mirrors the picture four ways' },
+  { id: 'glitch', key: 'c', icon: '📼', label: 'Glitch', title: 'Tears bands of the picture sideways' },
+  { id: 'crunch', key: 'v', icon: '🧊', label: 'Crunch', title: 'Drops the detail to a quarter' },
+];
+const PUNCH_BY_KEY = Object.fromEntries(PUNCHES.map((p) => [p.key, p]));
+const STROBE_HALF_MS = 1000 / 12;
+const punch = {
+  held: new Set(),
+  latched: new Set(),
+  zoom: 1, // eased towards 2.2 while Zoom is on
+  stutterAt: 0,
+  crunchCols: 0, // the detail to go back to when Crunch ends
+  hueAt: 0,
+  strobeAt: 0,
+  buttons: {},
+};
+const punchOn = (id) => punch.held.has(id) || punch.latched.has(id);
+
+function punchDown(id, latch) {
+  const was = punchOn(id);
+  if (latch) {
+    if (punch.latched.has(id)) punch.latched.delete(id);
+    else punch.latched.add(id);
+    punch.held.delete(id);
+  } else {
+    punch.held.add(id);
+  }
+  punchChanged(id, was);
+}
+
+function punchUp(id) {
+  const was = punchOn(id);
+  punch.held.delete(id);
+  punchChanged(id, was);
+}
+
+// Let go of everything held (the window lost focus, so no key-up is coming);
+// `all` also unlatches.
+function releasePunches(all = false) {
+  for (const id of [...punch.held, ...(all ? punch.latched : [])]) {
+    const was = punchOn(id);
+    punch.held.delete(id);
+    if (all) punch.latched.delete(id);
+    punchChanged(id, was);
+  }
+}
+
+function punchChanged(id, was) {
+  const on = punchOn(id);
+  if (on !== was) {
+    const t = performance.now();
+    if (id === 'strobe') punch.strobeAt = t;
+    if (id === 'hue') punch.hueAt = t;
+    if (id === 'stutter') punch.stutterAt = 0;
+    if (id === 'crunch') crunch(on);
+    if (state.paused) render();
+  }
+  syncPunchButtons();
+}
+
+function crunch(on) {
+  if (on) {
+    punch.crunchCols = +ui.cols.value;
+    ui.cols.value = Math.max(12, Math.round(punch.crunchCols / 4));
+  } else if (punch.crunchCols) {
+    ui.cols.value = punch.crunchCols;
+    punch.crunchCols = 0;
+  }
+  layout();
+}
+
+// A scene sets its own detail, so a held Crunch just ends without restoring.
+function dropCrunch() {
+  if (!punchOn('crunch')) return;
+  punch.crunchCols = 0;
+  punch.held.delete('crunch');
+  punch.latched.delete('crunch');
+  syncPunchButtons();
+}
+
+const punchHue = () => (punchOn('hue') ? ((performance.now() - punch.hueAt) * 0.6) % 360 : 0);
+
+// Stutter: let a frame through only every 125 ms.
+function stutterHold() {
+  if (!punchOn('stutter')) return false;
+  const t = performance.now();
+  if (t - punch.stutterAt < 125) return true;
+  punch.stutterAt = t;
+  return false;
+}
+
+// Zoom: a smaller window on the middle of the frame, eased in and out.
+function punchCrop(c) {
+  const target = punchOn('zoom') ? 2.2 : 1;
+  punch.zoom += (target - punch.zoom) * 0.3;
+  if (target === 1 && punch.zoom < 1.005) punch.zoom = 1;
+  if (punch.zoom === 1) return c;
+  const z = punch.zoom, w = c[2] / z, h = c[3] / z;
+  return [c[0] + (c[2] - w) / 2, c[1] + (c[3] - h) / 2, w, h];
+}
+
+// Kaleido and Glitch work on the sampled pixels, one per cell.
+function punchPixels(d, w, h) {
+  if (punchOn('kaleido')) {
+    // The top-left quarter reflected into the other three.
+    const hw = w >> 1, hh = h >> 1;
+    for (let y = 0; y < hh; y++) {
+      const row = y * w * 4;
+      for (let x = 0; x < hw; x++) {
+        const s = row + x * 4, t = row + (w - 1 - x) * 4;
+        d[t] = d[s];
+        d[t + 1] = d[s + 1];
+        d[t + 2] = d[s + 2];
+        d[t + 3] = d[s + 3];
+      }
+    }
+    for (let y = 0; y < hh; y++) d.copyWithin((h - 1 - y) * w * 4, y * w * 4, (y + 1) * w * 4);
+  }
+  if (punchOn('glitch')) {
+    // Torn bands: runs of rows slide sideways (wrapping round), some with
+    // their colour channels swapped. New tears every frame.
+    const row = new Uint8ClampedArray(w * 4);
+    for (let y = 0; y < h; ) {
+      const band = 1 + ((Math.random() * Math.max(2, h / 12)) | 0);
+      if (Math.random() < 0.35) {
+        const shift = ((Math.random() - 0.5) * w * 0.5) | 0;
+        const swap = Math.random() < 0.4;
+        for (let yy = y; yy < Math.min(h, y + band); yy++) {
+          const o = yy * w * 4;
+          row.set(d.subarray(o, o + w * 4));
+          for (let x = 0; x < w; x++) {
+            const s = ((((x - shift) % w) + w) % w) * 4, t = o + x * 4;
+            d[t] = row[swap ? s + 2 : s];
+            d[t + 1] = row[swap ? s : s + 1];
+            d[t + 2] = row[swap ? s + 1 : s + 2];
+          }
+        }
+      }
+      y += band;
+    }
+  }
+}
+
+function syncPunchButtons() {
+  for (const p of PUNCHES) {
+    const b = punch.buttons[p.id];
+    b.classList.toggle('on', punchOn(p.id));
+    b.classList.toggle('latched', punch.latched.has(p.id));
+    b.setAttribute('aria-pressed', String(punchOn(p.id)));
+  }
+}
+
+function buildPunchButtons() {
+  for (const p of PUNCHES) {
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.className = 'punch';
+    b.title = `${p.title}. Hold ${p.key.toUpperCase()}; Shift + ${p.key.toUpperCase()} locks it on.`;
+    const ico = document.createElement('span');
+    ico.textContent = p.icon;
+    const lbl = document.createElement('span');
+    lbl.className = 'lbl';
+    lbl.textContent = p.label;
+    const kbd = document.createElement('kbd');
+    kbd.textContent = p.key.toUpperCase();
+    b.append(ico, lbl, kbd);
+    // Held with the pointer: on while it's down, wherever it then moves.
+    b.addEventListener('pointerdown', (e) => {
+      e.preventDefault();
+      b.setPointerCapture?.(e.pointerId);
+      punchDown(p.id, e.shiftKey);
+    });
+    for (const ev of ['pointerup', 'pointercancel', 'lostpointercapture']) b.addEventListener(ev, () => punchUp(p.id));
+    b.addEventListener('contextmenu', (e) => e.preventDefault()); // long-press on touch screens
+    b.addEventListener('keydown', (e) => (e.key === 'Enter' || e.key === ' ') && e.preventDefault());
+    punch.buttons[p.id] = b;
+    ui.punches.append(b);
+  }
+  ui.punchHint.textContent = TOUCH_ONLY
+    ? 'Hold a button to play it; let go to stop.'
+    : 'Hold a key or button to play it, let go to stop. Shift + the key (or Shift-click) locks it on.';
 }
 
 // ---- Scenes -----------------------------------------------------------------
@@ -2936,11 +3145,13 @@ function describeLook() {
 function captureScene() {
   const scene = { label: describeLook() };
   for (const [k, el] of Object.entries(sceneFields())) scene[k] = el.type === 'checkbox' ? el.checked : el.value;
+  if (punch.crunchCols) scene.cols = String(punch.crunchCols); // the detail without Crunch held
   return scene;
 }
 
 function applyScene(scene) {
   const tetrisWas = ui.tetris.checked;
+  dropCrunch(); // the scene's own detail wins over a held Crunch
   for (const [k, el] of Object.entries(sceneFields())) {
     if (!(k in scene) || k === 'match') continue;
     if (el.type === 'checkbox') el.checked = !!scene[k];
@@ -3031,6 +3242,8 @@ ui.safeBtn.addEventListener('click', safeLook);
 ui.sceneSave.addEventListener('click', () => setSaving(!show.saving));
 loadScenes();
 renderScenes();
+buildPunchButtons();
+window.addEventListener('blur', () => releasePunches());
 
 // ---------------------------------------------------------------------------
 // Tabs: Look / Sound / Photo / Live, one open at a time (the choice is remembered)
@@ -3251,6 +3464,11 @@ function onKey(e) {
     else recallScene(n);
     return;
   }
+  const p = PUNCH_BY_KEY[e.key?.toLowerCase()];
+  if (p) {
+    if (!e.repeat) punchDown(p.id, e.shiftKey);
+    return;
+  }
   if (e.key === 'b') toggleBlackout();
   if (e.key === ' ') { e.preventDefault(); ui.pause.click(); }
   if (e.key === 's') snapshot();
@@ -3264,6 +3482,12 @@ function onKey(e) {
   else if (e.key === 'Escape' && document.body.classList.contains('immersive')) exitFullscreen();
 }
 document.addEventListener('keydown', onKey);
+
+function onKeyUp(e) {
+  const p = PUNCH_BY_KEY[e.key?.toLowerCase()];
+  if (p) punchUp(p.id);
+}
+document.addEventListener('keyup', onKeyUp);
 
 syncLabels();
 requestAnimationFrame(loop);
