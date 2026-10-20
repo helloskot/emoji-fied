@@ -960,6 +960,15 @@ input[type="range"]:focus-visible::-webkit-slider-thumb { box-shadow: 0 0 0 2px 
 .scene .what { color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 100%; }
 .scene.has-thumb .what { color: #eae4d8; }
 .scene.empty { background: var(--panel-2); border-style: dashed; box-shadow: none; }
+/* Example scenes, until they've played: a card in the scene's own colour. */
+.scene.example:not(.has-thumb) {
+  background:
+    radial-gradient(120% 100% at 100% 0%, color-mix(in srgb, var(--tint) 42%, transparent), transparent 62%),
+    linear-gradient(180deg, var(--key-hi), var(--key));
+}
+.scene .ico { position: absolute; top: 5px; right: 7px; font-size: 19px; line-height: 1; }
+.scene.has-thumb .ico { font-size: 15px; opacity: 0.9; }
+.sec-actions { display: inline-flex; gap: 14px; }
 .scene.empty .what { color: var(--faint); }
 .scene.current { border-color: var(--tab); box-shadow: var(--lip), 0 0 0 1px var(--tab), 0 0 14px rgba(255, 111, 145, 0.35); }
 .scenes.saving .scene { border-style: dashed; border-color: var(--tab); }

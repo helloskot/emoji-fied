@@ -2959,7 +2959,7 @@ function openOutput() {
     show.win.focus();
     return;
   }
-  const win = window.open('output.html?v=32', 'emojiFiedOutput', 'popup,width=960,height=540');
+  const win = window.open('output.html?v=33', 'emojiFiedOutput', 'popup,width=960,height=540');
   if (!win) {
     toast('Allow pop-ups for this site to open the output window');
     return;
@@ -3079,8 +3079,8 @@ function toggleBlackout(on = !show.blackOn) {
 }
 
 // Back to the plain default look: no Tetris, shapes or look shuffling.
-function safeLook() {
-  releasePunches(true);
+// Every scene setting at its default (what the page starts with).
+function defaultScene() {
   const scene = {};
   for (const [k, el] of Object.entries(sceneFields())) {
     if (k === 'match') continue; // the default set picks its own
@@ -3088,7 +3088,12 @@ function safeLook() {
       : el.tagName === 'SELECT' ? ([...el.options].find((o) => o.defaultSelected) || el.options[0]).value
       : el.defaultValue;
   }
-  applyScene(scene);
+  return scene;
+}
+
+function safeLook() {
+  releasePunches(true);
+  applyScene(defaultScene());
   show.scene = 0;
   renderScenes();
   liveToast('🛟 Safe look');
@@ -3662,19 +3667,66 @@ function applyScene(scene) {
   if (state.paused) render();
 }
 
+// Example scenes: a starter set for the slots. Each is the default look
+// with a few changes; it gets a real thumbnail the first time it plays.
+const EXAMPLE_SCENES = [
+  { id: 'candy', icon: '🌈', label: 'Candy Pop', tint: '#ff6fae', look: { style: 'emoji:rainbow', cols: '56', sat: '1.7', contrast: '1.35', beatShape: 'mix' } },
+  { id: 'matrix', icon: '💚', label: 'Matrix', tint: '#39ff7a', look: { style: 'text:katakana', ink: '#39ff7a', cols: '96', contrast: '1.7', bright: '0.04' } },
+  { id: 'love', icon: '💖', label: 'Love Bomb', tint: '#ff4f7b', look: { style: 'emoji:hearts', cols: '44', sat: '1.5', contrast: '1.3', beatShape: 'heart' } },
+  { id: 'skulls', icon: '💀', label: 'Skull Rave', tint: '#c38bff', look: { style: 'skull', ink: '#ff4fd8', cols: '72', contrast: '1.6', beatShape: 'star' } },
+  { id: 'tetris', icon: '🧱', label: 'Tetris Party', tint: '#ffd23f', look: { style: 'emoji:everything', cols: '40', sat: '1.3', tetris: true } },
+  { id: 'ghost', icon: '👻', label: 'Braille Ghost', tint: '#e9e3d6', look: { style: 'braille', ink: '#f2f2f2', cols: '130', contrast: '1.9', shadows: '-0.2' } },
+  { id: 'amber', icon: '📟', label: 'Amber Terminal', tint: '#ffb000', look: { style: 'text:detailed', ink: '#ffb000', cols: '120', contrast: '1.5' } },
+  { id: 'snack', icon: '🍩', label: 'Snack Attack', tint: '#ff9a3d', look: { style: 'emoji:food', cols: '52', sat: '1.4', highlights: '0.1' } },
+  { id: 'chaos', icon: '🌀', label: 'Chaos Mode', tint: '#5cb8ff', look: { style: 'emoji:faces', cols: '60', sat: '1.6', beatShape: 'mix', beatShuffle: '4' } },
+];
+
+function exampleScene(ex) {
+  return { ...defaultScene(), ...ex.look, label: ex.label, icon: ex.icon, tint: ex.tint, example: ex.id };
+}
+
 function loadScenes() {
+  let saved = null;
   try {
-    show.scenes = JSON.parse(localStorage.getItem('emojiFiedScenes') || '{}') || {};
+    saved = localStorage.getItem('emojiFiedScenes');
+    show.scenes = JSON.parse(saved || '{}') || {};
   } catch {
     show.scenes = {};
   }
+  // First visit: start with the examples.
+  if (saved === null) {
+    EXAMPLE_SCENES.forEach((ex, i) => (show.scenes[i + 1] = exampleScene(ex)));
+    storeScenes(true);
+  }
 }
 
-function storeScenes() {
+// Put the examples into the empty slots (or, with none empty, offer to
+// swap every slot for them).
+function loadExamples() {
+  const have = new Set(Object.values(show.scenes).map((sc) => sc.example).filter(Boolean));
+  const todo = EXAMPLE_SCENES.filter((ex) => !have.has(ex.id));
+  const empty = Array.from({ length: 9 }, (_, i) => i + 1).filter((n) => !show.scenes[n]);
+  if (!todo.length && !empty.length) {
+    toast('All the examples are already in your slots');
+    return;
+  }
+  if (!empty.length) {
+    if (!confirm('Every slot is full. Replace all nine scenes with the examples?')) return;
+    show.scenes = {};
+    EXAMPLE_SCENES.forEach((ex, i) => (show.scenes[i + 1] = exampleScene(ex)));
+  } else {
+    (todo.length ? todo : EXAMPLE_SCENES).slice(0, empty.length).forEach((ex, i) => (show.scenes[empty[i]] = exampleScene(ex)));
+  }
+  storeScenes();
+  renderScenes();
+  toast('✨ Example scenes loaded: tap one to try it');
+}
+
+function storeScenes(quiet = false) {
   try {
     localStorage.setItem('emojiFiedScenes', JSON.stringify(show.scenes));
   } catch {
-    toast('Couldn’t keep the scene: this browser blocks storage');
+    if (!quiet) toast('Couldn’t keep the scene: this browser blocks storage');
   }
 }
 
@@ -3687,7 +3739,17 @@ function recallScene(n) {
   applyScene(scene);
   show.scene = n;
   renderScenes();
-  liveToast(`🎬 ${n} · ${scene.label}`);
+  liveToast(`🎬 ${n} · ${scene.icon ? `${scene.icon} ` : ''}${scene.label}`);
+  // No picture yet (an example): take one once the look has drawn, or
+  // for a Tetris build once the pieces have landed.
+  if (!scene.thumb && hasSource()) {
+    setTimeout(() => {
+      if (show.scenes[n] !== scene || show.scene !== n || !hasSource()) return;
+      scene.thumb = sceneThumb();
+      storeScenes(true);
+      renderScenes();
+    }, scene.tetris ? TETRIS_FALL_MS + TETRIS_BUILD_MS + 800 : 700);
+  }
   dbg(`scene ${n} recalled: ${scene.label}`);
 }
 
@@ -3727,7 +3789,17 @@ function renderScenes() {
         b.classList.add('has-thumb');
         b.style.backgroundImage = `url("${scene.thumb}")`;
       }
+      if (scene?.example) {
+        b.classList.add('example');
+        b.style.setProperty('--tint', scene.tint || 'var(--tab)');
+      }
       b.append(num, what);
+      if (scene?.icon) {
+        const ico = document.createElement('span');
+        ico.className = 'ico';
+        ico.textContent = scene.icon;
+        b.append(ico);
+      }
       // An empty slot saves straight away; a full one needs Save mode.
       b.addEventListener('click', () => (show.saving || !scene ? saveScene(n) : recallScene(n)));
       return b;
@@ -3751,6 +3823,7 @@ ui.blackoutBtn.addEventListener('click', () => toggleBlackout());
 ui.freezeBtn.addEventListener('click', () => ui.pause.click());
 ui.safeBtn.addEventListener('click', safeLook);
 ui.sceneSave.addEventListener('click', () => setSaving(!show.saving));
+document.getElementById('examplesBtn').addEventListener('click', loadExamples);
 loadScenes();
 renderScenes();
 buildPunchButtons();
@@ -4082,5 +4155,5 @@ try {
 } catch (err) {
   ui.error.textContent = `Setup failed: ${err.message}`;
 }
-window.emojiFiedReady = '32';
-dbg('app.js v32 initialised');
+window.emojiFiedReady = '33';
+dbg('app.js v33 initialised');
