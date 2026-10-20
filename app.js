@@ -136,6 +136,16 @@ const ui = {
   invert: $('#invert'),
   blank: $('#blank'),
   tetris: $('#tetris'),
+  wordsOn: $('#wordsOn'),
+  words: $('#words'),
+  wordsMode: $('#wordsMode'),
+  wordsMotion: $('#wordsMotion'),
+  wordsColor: $('#wordsColor'),
+  wordsSize: $('#wordsSize'),
+  wordsSizeOut: $('#wordsSizeOut'),
+  wordsPos: $('#wordsPos'),
+  wordsOutline: $('#wordsOutline'),
+  wordsDot: $('#wordsDot'),
   blackout: $('#blackout'),
   liveDot: $('#liveDot'),
   outputRow: $('#outputRow'),
@@ -521,7 +531,7 @@ const BAYER4 = [0, 8, 2, 10, 12, 4, 14, 6, 3, 11, 1, 9, 15, 7, 13, 5].map((v) =>
 // Draw the current frame (or the `crop` window of it) into a sample canvas,
 // one pixel per cell (2x4 for braille), and apply the adjustments in place.
 // Used for the live view and, at much higher detail, for posters.
-function sampleFrame(sc, sx, crop, fx, mirror, punched) {
+function sampleFrame(sc, sx, crop, fx, mirror, punched, words) {
   const sw = sc.width, sh = sc.height;
   sx.save();
   sx.imageSmoothingEnabled = true;
@@ -540,7 +550,144 @@ function sampleFrame(sc, sx, crop, fx, mirror, punched) {
   if (punched) punchPixels(img.data, sw, sh);
   // Written back so the full-colour tint pass sees the adjusted colours.
   sx.putImageData(img, 0, 0);
+  if (words && wordsActive()) {
+    // Words are painted into the sample like part of the picture, so the
+    // renderer draws them out of the current glyphs.
+    drawWords(sx, sw, sh);
+    return sx.getImageData(0, 0, sw, sh).data;
+  }
   return img.data;
+}
+
+// ---- Words ------------------------------------------------------------------
+// A message drawn into the picture: over it (with a dark outline so it
+// reads), on its own, or as a cut-out the picture shows through. Up to four
+// lines; still, scrolling, typed out, bouncing or pulsing on the beat.
+
+const WORDS_FONT = "'Bricolage Grotesque', ui-sans-serif, system-ui, sans-serif";
+const wordsActive = () => ui.wordsOn.checked && ui.words.value.trim() !== '';
+document.fonts?.load(`800 32px ${WORDS_FONT}`).catch(() => {});
+
+function drawWords(sx, sw, sh) {
+  const lines = ui.words.value.split('\n').map((l) => l.trim()).filter(Boolean).slice(0, 4);
+  if (!lines.length) return;
+  const t = performance.now() / 1000;
+  const motion = ui.wordsMotion.value, mode = ui.wordsMode.value;
+  // The lines fill this share of the height, unless that's too wide
+  // (scrolling text may run on).
+  let px = (sh * (+ui.wordsSize.value / 100)) / lines.length;
+  sx.save();
+  sx.font = `800 ${px}px ${WORDS_FONT}`;
+  let widest = Math.max(...lines.map((l) => sx.measureText(l).width));
+  if (motion !== 'scroll' && widest > sw * 0.94) {
+    px *= (sw * 0.94) / widest;
+    sx.font = `800 ${px}px ${WORDS_FONT}`;
+    widest = Math.max(...lines.map((l) => sx.measureText(l).width));
+  }
+  const blockH = px * lines.length;
+  const pos = ui.wordsPos.value;
+  const top = pos === 'top' ? sh * 0.05 : pos === 'bottom' ? sh * 0.95 - blockH : (sh - blockH) / 2;
+
+  if (motion === 'pulse') {
+    // Thump with the beat (a gentle breath when nothing's listening).
+    const listening = sound.analyser || midi.on || tempoOn();
+    const k = 1 + 0.3 * Math.min(1, sound.kick) + (listening ? 0 : 0.05 * Math.sin(t * 3));
+    const cx = sw / 2, cy = top + blockH / 2;
+    sx.translate(cx, cy);
+    sx.scale(k, k);
+    sx.translate(-cx, -cy);
+  }
+
+  // Where every character goes.
+  const total = lines.reduce((n, l) => n + [...l].length, 0);
+  let budget = motion === 'type' ? Math.min(total, Math.floor(t * 9) % (total + 14)) : Infinity;
+  const scrollX = sw - ((t * sw * 0.3) % (widest + sw));
+  const chars = [];
+  lines.forEach((line, li) => {
+    const glyphs = [...line];
+    const w = sx.measureText(line).width;
+    const x0 = motion === 'scroll' ? scrollX : (sw - w) / 2;
+    const y = top + px * (li + 0.55);
+    glyphs.forEach((ch, i) => {
+      if (budget-- <= 0) return;
+      const x = x0 + sx.measureText(glyphs.slice(0, i).join('')).width;
+      const bob = motion === 'bounce' ? Math.sin(t * 5 + chars.length * 0.6) * px * 0.12 : 0;
+      chars.push([ch, x, y + bob]);
+    });
+  });
+  sx.textBaseline = 'middle';
+  sx.textAlign = 'left';
+
+  let fill = ui.wordsColor.value;
+  if (fill === 'rainbow') {
+    const g = sx.createLinearGradient(0, 0, sw, 0);
+    const h0 = (t * 70) % 360;
+    for (let i = 0; i <= 6; i++) g.addColorStop(i / 6, `hsl(${(h0 + i * 60) % 360} 95% 62%)`);
+    fill = g;
+  }
+
+  if (mode === 'cutout') {
+    // Keep the picture only inside the letters; dark everywhere else. The
+    // letters go into a mask first: 'destination-in' cuts on every draw
+    // call, so drawing them one by one would leave only the last letter.
+    const mask = wordsMask(sw, sh);
+    const m = mask.getContext('2d');
+    m.setTransform(1, 0, 0, 1, 0, 0);
+    m.clearRect(0, 0, sw, sh);
+    m.setTransform(sx.getTransform());
+    m.font = sx.font;
+    m.textBaseline = 'middle';
+    m.textAlign = 'left';
+    m.fillStyle = '#fff';
+    for (const [ch, x, y] of chars) m.fillText(ch, x, y);
+    sx.setTransform(1, 0, 0, 1, 0, 0);
+    sx.globalCompositeOperation = 'destination-in';
+    sx.drawImage(mask, 0, 0);
+    sx.globalCompositeOperation = 'destination-over';
+    sx.fillStyle = BG;
+    sx.fillRect(0, 0, sw, sh);
+  } else {
+    // Unicode styles have one ink, so letters stand out only by how dense
+    // their characters are: dim the picture a little behind them.
+    if (mode === 'over' && state.kind !== 'emoji') {
+      sx.save();
+      sx.setTransform(1, 0, 0, 1, 0, 0);
+      sx.fillStyle = 'rgba(0, 0, 0, 0.55)';
+      sx.fillRect(0, 0, sw, sh);
+      sx.restore();
+    }
+    if (mode === 'only') {
+      sx.save();
+      sx.setTransform(1, 0, 0, 1, 0, 0);
+      sx.fillStyle = BG;
+      sx.fillRect(0, 0, sw, sh);
+      sx.restore();
+    } else if (ui.wordsOutline.checked) {
+      sx.lineJoin = 'round';
+      sx.lineWidth = Math.max(1, px * 0.16);
+      sx.strokeStyle = '#000';
+      for (const [ch, x, y] of chars) sx.strokeText(ch, x, y);
+    }
+    sx.fillStyle = fill;
+    for (const [ch, x, y] of chars) sx.fillText(ch, x, y);
+  }
+  sx.restore();
+}
+
+let wordsMaskCanvas = null;
+function wordsMask(w, h) {
+  if (!wordsMaskCanvas) wordsMaskCanvas = document.createElement('canvas');
+  if (wordsMaskCanvas.width !== w || wordsMaskCanvas.height !== h) {
+    wordsMaskCanvas.width = w;
+    wordsMaskCanvas.height = h;
+  }
+  return wordsMaskCanvas;
+}
+
+function syncWords() {
+  ui.wordsDot.hidden = !wordsActive();
+  ui.wordsSizeOut.textContent = `${ui.wordsSize.value}%`;
+  if (state.paused) render();
 }
 
 // Contrast, brightness, saturation, shadows/highlights, invert, plus the
@@ -600,7 +747,7 @@ function viewCrop() {
 }
 
 function grabFrame() {
-  return sampleFrame(sample, sctx, punchCrop(viewCrop()), state.fx, ui.mirror.checked, true);
+  return sampleFrame(sample, sctx, punchCrop(viewCrop()), state.fx, ui.mirror.checked, true, true);
 }
 
 function render() {
@@ -1715,7 +1862,7 @@ async function makePoster() {
     sc.width = cols * sub[0];
     sc.height = rows * sub[1];
     const sx = sc.getContext('2d', { willReadFrequently: true });
-    const d = sampleFrame(sc, sx, crop, null, ui.mirror.checked);
+    const d = sampleFrame(sc, sx, crop, null, ui.mirror.checked, false, true);
 
     const pc = document.createElement('canvas');
     pc.width = pw;
@@ -2960,7 +3107,7 @@ function openOutput() {
     show.win.focus();
     return;
   }
-  const win = window.open('output.html?v=34', 'emojiFiedOutput', 'popup,width=960,height=540');
+  const win = window.open('output.html?v=35', 'emojiFiedOutput', 'popup,width=960,height=540');
   if (!win) {
     toast('Allow pop-ups for this site to open the output window');
     return;
@@ -3085,6 +3232,7 @@ function defaultScene() {
   const scene = {};
   for (const [k, el] of Object.entries(sceneFields())) {
     if (k === 'match') continue; // the default set picks its own
+    if (k === 'words') continue; // keep what you've typed
     scene[k] = el.type === 'checkbox' ? el.defaultChecked
       : el.tagName === 'SELECT' ? ([...el.options].find((o) => o.defaultSelected) || el.options[0]).value
       : el.defaultValue;
@@ -3452,6 +3600,7 @@ const LEARN_RANGES = {
   shadows: ['Shadows', ui.shadows],
   highlights: ['Highlights', ui.highlights],
   fx: ['Effect strength', ui.fxStrength],
+  wordsSize: ['Words size', ui.wordsSize],
 };
 const LEARN_BUTTONS = {
   blackout: ['Blackout', () => toggleBlackout()],
@@ -3460,6 +3609,7 @@ const LEARN_BUTTONS = {
   tap: ['Tap tempo', () => tapTempo()],
   random: ['Randomize', () => randomize()],
   tetris: ['Tetris on/off', () => ui.tetris.click()],
+  words: ['Words on/off', () => ui.wordsOn.click()],
 };
 
 // What a learned id controls: { label, set(v) } for sliders, { label,
@@ -3591,6 +3741,7 @@ ui.safeBtn.dataset.learn = 'safe';
 ui.tapBtn.dataset.learn = 'tap';
 ui.random.dataset.learn = 'random';
 ui.tetris.closest('label').dataset.learn = 'tetris';
+ui.wordsOn.closest('label').dataset.learn = 'words';
 
 // While learning, a click picks the control instead of using it.
 for (const ev of ['pointerdown', 'mousedown', 'touchstart', 'click']) {
@@ -3628,6 +3779,8 @@ const sceneFields = () => ({
   invert: ui.invert, blank: ui.blank, tetris: ui.tetris,
   fxStrength: ui.fxStrength, beatShape: ui.beatShape, beatOutline: ui.beatOutline, beatShuffle: ui.beatShuffle,
   twinkle: ui.twinkle, kenBurns: ui.kenBurns,
+  wordsOn: ui.wordsOn, words: ui.words, wordsMode: ui.wordsMode, wordsMotion: ui.wordsMotion,
+  wordsColor: ui.wordsColor, wordsSize: ui.wordsSize, wordsPos: ui.wordsPos, wordsOutline: ui.wordsOutline,
 });
 
 function describeLook() {
@@ -3636,6 +3789,7 @@ function describeLook() {
   if (state.kind !== 'emoji') bits.push(ui.ink.selectedOptions[0]?.textContent);
   if (ui.invert.checked) bits.push('inverted');
   if (ui.tetris.checked) bits.push('🧱');
+  if (wordsActive()) bits.push(`💬 ${ui.words.value.trim().split('\n')[0].slice(0, 10)}`);
   return bits.join(' · ');
 }
 
@@ -3673,6 +3827,7 @@ function applyScene(scene) {
   applyStyle(); // also picks the set's own "Match by"...
   if (scene.match && state.kind === 'emoji') ui.match.value = scene.match; // ...unless saved
   syncLabels();
+  syncWords();
   onBeatShapeChange();
   if (ui.tetris.checked !== tetrisWas) tetris.plan = null;
   if (state.paused) render();
@@ -3716,9 +3871,13 @@ const EXAMPLE_SCENES = [
   { id: 'hypno', group: 'Party', icon: '😵‍💫', label: 'Hypno', tint: '#ff6fae', look: { style: 'emoji:rainbow', cols: '48', sat: '1.8', beatShape: 'circle' } },
   { id: 'party', group: 'Party', icon: '🎉', label: 'Party Starter', tint: '#ffd23f', look: { style: 'emoji:everything', cols: '56', sat: '1.4', beatShape: 'mix', beatShuffle: '8' } },
   { id: 'bricks', group: 'Party', icon: '🌈', label: 'Rainbow Bricks', tint: '#ff6f91', look: { style: 'emoji:rainbow', cols: '36', tetris: true } },
+  { id: 'hello', group: 'Words', icon: '💬', label: 'Say Hello', tint: '#c38bff', look: { style: 'emoji:everything', cols: '64', wordsOn: true, words: 'HELLO 👋', wordsColor: '#ffd23f', wordsMotion: 'bounce', wordsSize: '50' } },
+  { id: 'drop', group: 'Words', icon: '📣', label: 'Drop It', tint: '#ff6f91', look: { style: 'emoji:rainbow', cols: '56', sat: '1.5', wordsOn: true, words: 'DROP IT', wordsColor: 'rainbow', wordsMotion: 'pulse', wordsSize: '60', beatShape: 'mix' } },
+  { id: 'marquee', group: 'Words', icon: '🎞️', label: 'Marquee', tint: '#ffb000', look: { style: 'text:detailed', ink: '#ffb000', cols: '110', contrast: '1.5', bright: '0.06', wordsOn: true, words: 'NOW PLAYING ✦ EMOJI·FIED', wordsMotion: 'scroll', wordsSize: '34', wordsPos: 'bottom' } },
+  { id: 'cut', group: 'Words', icon: '✂️', label: 'Cut-out', tint: '#6fe3a5', look: { style: 'emoji:nature', cols: '72', sat: '1.3', wordsOn: true, words: 'WILD', wordsMode: 'cutout', wordsSize: '85', wordsOutline: false } },
 ];
 const STARTER_SCENES = EXAMPLE_SCENES.filter((ex) => ex.starter);
-const EXAMPLE_GROUPS = ['Emoji', 'Text & code', 'Fine detail', 'Party'];
+const EXAMPLE_GROUPS = ['Emoji', 'Words', 'Text & code', 'Fine detail', 'Party'];
 
 function exampleScene(ex) {
   return { ...defaultScene(), ...ex.look, label: ex.label, icon: ex.icon, tint: ex.tint, example: ex.id };
@@ -4162,6 +4321,18 @@ ui.keysClose.addEventListener('click', () => toggleKeys(false));
 syncSnaps();
 ui.random.addEventListener('click', () => randomize());
 ui.mic.addEventListener('change', onSoundModeChange);
+for (const el of [ui.wordsOn, ui.words, ui.wordsMode, ui.wordsMotion, ui.wordsColor, ui.wordsSize, ui.wordsPos, ui.wordsOutline]) {
+  el.addEventListener('input', syncWords);
+  el.addEventListener('change', syncWords);
+}
+ui.wordsOn.addEventListener('change', () => {
+  // Turning words on with nothing typed: a nudge to the Words tab.
+  if (ui.wordsOn.checked && !ui.words.value.trim()) {
+    setTab('words');
+    ui.words.focus();
+  }
+});
+syncWords();
 ui.mic.checked = false; // starts off, even if the browser restored the box
 ui.midi.addEventListener('change', () => (ui.midi.checked ? enableMidi() : disableMidi()));
 ui.midi.checked = false; // MIDI starts off, even if the browser restored the box
@@ -4202,7 +4373,7 @@ window.addEventListener('blur', () => motion.keys.clear());
 
 // Shortcuts; also called by the output window for keys pressed there.
 function onKey(e) {
-  if (e.target?.matches?.('input[type="text"], select')) return;
+  if (e.target?.matches?.('input[type="text"], textarea, select')) return;
   if (e.metaKey || e.ctrlKey || e.altKey) return; // leave the browser's own shortcuts alone
   // Number row or keypad: 1-9 scenes (Shift saves), 0 the safe look.
   const digit = /^(?:Digit|Numpad)(\d)$/.exec(e.code || '')?.[1];
@@ -4230,6 +4401,7 @@ function onKey(e) {
   if (e.key === 'p') snapshot({ quiet: true });
   if (e.key === 'd') randomize();
   if (e.key === 't') ui.tetris.click();
+  if (e.key === 'm') ui.wordsOn.click();
   if (e.key === '?') toggleKeys();
   if (e.key === 'Escape' && !ui.moreMenu.hidden) closeMenu();
   else if (e.key === 'Escape' && !ui.keysSheet.hidden) toggleKeys(false);
@@ -4254,5 +4426,5 @@ try {
 } catch (err) {
   ui.error.textContent = `Setup failed: ${err.message}`;
 }
-window.emojiFiedReady = '34';
-dbg('app.js v34 initialised');
+window.emojiFiedReady = '35';
+dbg('app.js v35 initialised');

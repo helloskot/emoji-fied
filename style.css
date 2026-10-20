@@ -41,6 +41,7 @@
   --c-beat: #5cb8ff;
   --c-live: #ff6f91;
   --c-photo: #6fe3a5;
+  --c-words: #c38bff;
   --tab: var(--c-look);
   --tab-ink: #1d1600;
   --r-lg: 18px;
@@ -410,6 +411,7 @@ body.immersive .stage {
 .controls[data-tab="beat"] { --tab: var(--c-beat); --tab-ink: #001b2e; }
 .controls[data-tab="live"] { --tab: var(--c-live); --tab-ink: #2b0010; }
 .controls[data-tab="photo"] { --tab: var(--c-photo); --tab-ink: #002412; }
+.controls[data-tab="words"] { --tab: var(--c-words); --tab-ink: #1c0030; }
 
 .field { display: grid; gap: 6px; }
 .field[hidden] { display: none; }
@@ -509,7 +511,7 @@ kbd {
 
 /* ---- Inputs ------------------------------------------------------------------ */
 
-select, input[type="text"] {
+select, input[type="text"], textarea {
   width: 100%;
   background: var(--panel-2);
   color: var(--text);
@@ -530,6 +532,19 @@ select {
 }
 select:focus-visible, input[type="text"]:focus-visible { outline: 2px solid var(--tab); outline-offset: 1px; }
 input[type="text"] { font-size: 18px; }
+textarea {
+  resize: vertical;
+  min-height: 64px;
+  font: 800 20px/1.2 var(--font);
+  letter-spacing: -0.01em;
+}
+textarea:focus-visible { outline: 2px solid var(--tab); outline-offset: 1px; }
+.words-dot { background: var(--c-words); box-shadow: 0 0 6px var(--c-words); }
+/* Tab labels stay on one line; with all five tabs showing (a photo is
+   loaded), the emoji step aside to make room. */
+.tabs button { white-space: nowrap; }
+.tabs:has(> #photoTab:not([hidden])) .tab-ico { display: none; }
+@media (max-width: 480px) { .tabs button { font-size: 13px; padding: 8px 2px; } }
 
 /* Faders: a slim track filled with the tab's colour (--p is set from the
    value) and a chunky cap with a groove. */

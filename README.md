@@ -52,12 +52,20 @@ the stream. Sharing the tab gets the same result.
 A toolbar (⏺ Record · 📸 Photo · ⏸ Pause · ⛶ Full · 📺 TV · ⋯ More), the
 source, style (🎲 randomizes it) and detail, then four tabs:
 
-- **🎨 Look**: **Try a look**, a library of 33 example looks in four rows
-  that scroll sideways (Emoji, Text & code, Fine detail, Party): tap one to
+- **🎨 Look**: **Try a look**, a library of 37 example looks in five rows
+  that scroll sideways (Emoji, Words, Text & code, Fine detail, Party): tap one to
   try it live, then save it to a scene slot (🎬 Live) to keep it, name and
   emoji included. Then match by colour or brightness (or the ink colour for unicode),
   adjustments (contrast, brightness, saturation, shadows, highlights, with
   reset), mirror, invert, blank darks and **🧱 Tetris build**.
+- **🔤 Words**: type a message (up to four lines) and it's drawn into the
+  picture out of the current emoji or characters, so it changes with the
+  style: **over the picture** (with a dark outline so it reads), **words
+  only**, or as a **cut-out** the picture shows through. Motion: still,
+  scrolling marquee, typewriter, bounce, or pulse on the beat; colour (white,
+  sunflower, bubblegum, sky, mint, an animated 🌈 rainbow), size and
+  position. `M` shows or hides them. Scenes remember them, posters, the output
+  window and recordings include them, and the toggle is MIDI-learnable.
 - **🎵 Beat**: what drives the effects, and what a beat does.
   - *Listen to* **🎤 Sound** (the microphone, or a video's or shared tab's own
     audio, with a sensitivity slider), **🎹 MIDI** (Chrome, Edge or Firefox on

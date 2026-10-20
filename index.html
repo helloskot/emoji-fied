@@ -15,7 +15,7 @@
   <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🤩</text></svg>" />
   <link rel="preload" href="fonts/bricolage-grotesque.woff2" as="font" type="font/woff2" crossorigin />
   <link rel="preload" href="fonts/dm-mono-500.woff2" as="font" type="font/woff2" crossorigin />
-  <link rel="stylesheet" href="style.css?v=34" />
+  <link rel="stylesheet" href="style.css?v=35" />
 </head>
 <body>
   <header>
@@ -60,7 +60,7 @@
           </div>
           <p class="status" id="status" aria-live="polite"></p>
           <p class="error" id="error" role="alert"></p>
-          <p class="note">Everything runs in your browser. No video leaves your device. <span class="version">v34</span></p>
+          <p class="note">Everything runs in your browser. No video leaves your device. <span class="version">v35</span></p>
         </div>
       </div>
     </div>
@@ -139,10 +139,11 @@
 
       <div class="ctl-tabs">
       <div class="tabs" role="tablist" aria-label="Settings">
-        <button type="button" role="tab" data-tab="look" aria-selected="true">🎨 Look</button>
-        <button type="button" role="tab" data-tab="beat" aria-selected="false">🎵 Beat<span class="tab-dot" id="soundDot" hidden></span></button>
-        <button type="button" role="tab" data-tab="live" aria-selected="false">🎬 Live<span class="tab-dot live-dot" id="liveDot" hidden></span></button>
-        <button type="button" role="tab" data-tab="photo" aria-selected="false" id="photoTab" hidden>🖼 Photo</button>
+        <button type="button" role="tab" data-tab="look" aria-selected="true"><span class="tab-ico">🎨</span> Look</button>
+        <button type="button" role="tab" data-tab="words" aria-selected="false"><span class="tab-ico">🔤</span> Words<span class="tab-dot words-dot" id="wordsDot" hidden></span></button>
+        <button type="button" role="tab" data-tab="beat" aria-selected="false"><span class="tab-ico">🎵</span> Beat<span class="tab-dot" id="soundDot" hidden></span></button>
+        <button type="button" role="tab" data-tab="live" aria-selected="false"><span class="tab-ico">🎬</span> Live<span class="tab-dot live-dot" id="liveDot" hidden></span></button>
+        <button type="button" role="tab" data-tab="photo" aria-selected="false" id="photoTab" hidden><span class="tab-ico">🖼</span> Photo</button>
       </div>
 
       <!-- Look: how the picture is drawn -->
@@ -211,6 +212,64 @@
       </div>
 
       <!-- Beat: what drives the effects, and what a beat does -->
+      <!-- Words: a message drawn out of the picture's own emoji or characters -->
+      <div class="tab-panel" data-panel="words" role="tabpanel" hidden>
+        <div class="sec">
+          <div class="sec-head">
+            <span class="field-label">Your words</span>
+            <div class="toggles"><label title="Show or hide the words (M)"><input id="wordsOn" type="checkbox" /> Show <kbd>M</kbd></label></div>
+          </div>
+          <textarea id="words" rows="2" spellcheck="false" autocomplete="off" placeholder="Type something… (Enter starts a new line)">HELLO</textarea>
+          <label class="field">
+            <span>Mode</span>
+            <select id="wordsMode">
+              <option value="over" selected>Over the picture</option>
+              <option value="only">Words only</option>
+              <option value="cutout">Cut-out (picture inside the letters)</option>
+            </select>
+          </label>
+        </div>
+        <div class="sec">
+          <label class="field">
+            <span>Motion</span>
+            <select id="wordsMotion">
+              <option value="still" selected>Still</option>
+              <option value="scroll">Scroll (marquee)</option>
+              <option value="type">Typewriter</option>
+              <option value="bounce">Bounce</option>
+              <option value="pulse">Pulse on the beat</option>
+            </select>
+          </label>
+          <label class="field">
+            <span>Colour</span>
+            <select id="wordsColor">
+              <option value="#fffaf0" selected>White</option>
+              <option value="#ffd23f">Sunflower</option>
+              <option value="#ff6f91">Bubblegum</option>
+              <option value="#5cb8ff">Sky</option>
+              <option value="#6fe3a5">Mint</option>
+              <option value="rainbow">🌈 Rainbow</option>
+            </select>
+          </label>
+          <label class="field range">
+            <span>Size <output id="wordsSizeOut"></output></span>
+            <input id="wordsSize" type="range" min="15" max="95" step="1" value="55" />
+          </label>
+          <label class="field">
+            <span>Position</span>
+            <select id="wordsPos">
+              <option value="middle" selected>Middle</option>
+              <option value="top">Top</option>
+              <option value="bottom">Bottom</option>
+            </select>
+          </label>
+          <div class="toggles">
+            <label title="A dark edge so the letters read on a busy picture"><input id="wordsOutline" type="checkbox" checked /> Dark outline</label>
+          </div>
+          <span class="hint">The letters are drawn out of the current emoji or characters, so they change with the style. Scenes remember them.</span>
+        </div>
+      </div>
+
       <div class="tab-panel" data-panel="beat" role="tabpanel" hidden>
         <div class="sec">
           <span class="field-label">Listen to</span>
@@ -437,6 +496,7 @@
             <dt><kbd>K</kbd></dt><dd>🥁 Tap tempo</dd>
             <dt><kbd>D</kbd></dt><dd>🎲 Randomize</dd>
             <dt><kbd>T</kbd></dt><dd>🧱 Tetris on/off</dd>
+            <dt><kbd>M</kbd></dt><dd>🔤 Words on/off</dd>
           </dl>
         </section>
         <section>
@@ -509,7 +569,7 @@
             function () { var r = document.createRange(); r.selectNodeContents(pre); var s = getSelection(); s.removeAllRanges(); s.addRange(r); }
           );
         });
-        dbg('page v34', navigator.userAgent);
+        dbg('page v35', navigator.userAgent);
         dbg('secure=' + window.isSecureContext, 'mediaDevices=' + !!navigator.mediaDevices,
             'getUserMedia=' + !!(navigator.mediaDevices && navigator.mediaDevices.getUserMedia));
         if (navigator.permissions && navigator.permissions.query) {
@@ -530,11 +590,11 @@
       window.addEventListener('unhandledrejection', function (e) { dbg('REJECTION', String(e.reason)); show((e.reason && e.reason.message) || String(e.reason)); });
       window.addEventListener('load', function () {
         dbg('load event, app ready = ' + window.emojiFiedReady);
-        if (window.emojiFiedReady !== '34') show('an old or broken copy of the app loaded. Close this tab and open the link again.');
+        if (window.emojiFiedReady !== '35') show('an old or broken copy of the app loaded. Close this tab and open the link again.');
       });
     })();
   </script>
-  <script src="gif.js?v=34"></script>
-  <script src="app.js?v=34"></script>
+  <script src="gif.js?v=35"></script>
+  <script src="app.js?v=35"></script>
 </body>
 </html>
