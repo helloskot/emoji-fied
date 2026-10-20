@@ -69,6 +69,8 @@ const ui = {
   soundDot: $('#soundDot'),
   tabButtons: [...document.querySelectorAll('[data-tab]')],
   tabPanels: [...document.querySelectorAll('[data-panel]')],
+  controls: $('.controls'),
+  logoDot: $('#logoDot'),
   kenBurns: $('#kenBurns'),
   tilt: $('#tilt'),
   tiltOpts: $('#tiltOpts'),
@@ -89,10 +91,18 @@ const ui = {
   status: $('#status'),
   style: $('#style'),
   random: $('#random'),
-  sound: $('#sound'),
+  mic: $('#mic'),
+  micOpts: $('#micOpts'),
+  micStatus: $('#micStatus'),
+  midiOpts: $('#midiOpts'),
+  midiChip: $('#midiChip'),
+  tempoBox: $('#tempoBox'),
+  beatPulse: $('#beatPulse'),
+  beatFlash: $('#beatFlash'),
+  beatTetris: $('#beatTetris'),
+  beatShuffle: $('#beatShuffle'),
   meter: $('#meter'),
   meterFill: $('#meterFill'),
-  soundOpts: $('#soundOpts'),
   sens: $('#sens'),
   sensField: $('#sensField'),
   midi: $('#midi'),
@@ -139,6 +149,28 @@ const ui = {
   scenes: $('#scenes'),
   scenesHint: $('#scenesHint'),
   punches: $('#punches'),
+  tempoRead: $('#tempoRead'),
+  tapBtn: $('#tapBtn'),
+  beatDots: [...document.querySelectorAll('#beatDots i')],
+  tempoSync: $('#tempoSync'),
+  moreBtn: $('#moreBtn'),
+  moreMenu: $('#moreMenu'),
+  snapsItem: $('#snapsItem'),
+  keysItem: $('#keysItem'),
+  keysBtn: $('#keysBtn'),
+  snapBadge: $('#snapBadge'),
+  snapTray: $('#snapTray'),
+  snapSheet: $('#snapSheet'),
+  snapGrid: $('#snapGrid'),
+  snapSaveAll: $('#snapSaveAll'),
+  snapClear: $('#snapClear'),
+  snapClose: $('#snapClose'),
+  keysSheet: $('#keysSheet'),
+  keysClose: $('#keysClose'),
+  learnHead: $('#learnHead'),
+  learnBtn: $('#learnBtn'),
+  midiMap: $('#midiMap'),
+  learnHint: $('#learnHint'),
   punchHint: $('#punchHint'),
   blankField: $('#blankField'),
   flip: $('#flip'),
@@ -451,6 +483,7 @@ const squareCells = () => state.kind === 'emoji' || state.kind === 'skull';
 function layout() {
   state.cols = +ui.cols.value;
   ui.colsOut.textContent = `${state.cols} cols`;
+  paintRange(ui.cols);
 
   const [vw, vh] = frameSize();
   const aspect =
@@ -738,6 +771,7 @@ function frame() {
     frames = 0;
     fpsT = now;
   }
+  tickTempo(now);
   tickLive(now);
 }
 
@@ -1309,10 +1343,11 @@ const TETRIS_FILL = [
   [[0, 0]],
 ].flatMap(orientations);
 
-const tetris = { plan: null, seed: 1 };
+const tetris = { plan: null, seed: 1, lastDrop: 0 };
 
-// Played from MIDI, the pieces wait for notes instead of a timeline.
-const tetrisByNotes = () => midi.on && midi.devices > 0;
+// With a beat source on (and "Tetris drops"), the pieces wait for notes and
+// beats instead of a timeline.
+const tetrisByNotes = () => ui.beatTetris.checked && ((midi.on && midi.devices > 0) || tempoOn() || (micOn() && !!sound.analyser));
 
 function tetrisPlan(cols, rows, start, byNotes) {
   const seed = tetris.seed++;
@@ -1445,6 +1480,16 @@ function tetrisNote(note, vel, now) {
   const span = Math.max(12, midi.hi - midi.lo);
   const band = Math.min(P.bands - 1, Math.max(0, Math.floor(((note - midi.lo) / (span + 1)) * P.bands)));
   tetrisRelease(P, band, Math.max(1, Math.round((P.count / 60) * (0.4 + vel))), now);
+  tetris.lastDrop = now;
+}
+
+// On a beat: a batch sweeping across the bands, left to right, so a
+// picture builds in 32 beats (8 bars).
+function tetrisBeat(now) {
+  const P = tetris.plan;
+  if (!P || !P.byNotes || !P.unreleased) return;
+  tetrisRelease(P, sound.beats % P.bands, Math.max(1, Math.ceil(P.count / 32)), now);
+  tetris.lastDrop = now;
 }
 
 // Where every piece is this frame, or null when nothing moves (Tetris off,
@@ -1459,7 +1504,7 @@ function tetrisFrame(now) {
   if (!P || P.cols !== state.cols || P.rows !== state.rows || P.byNotes !== byNotes || now > P.endAt) {
     P = tetris.plan = tetrisPlan(state.cols, state.rows, now, byNotes);
   }
-  if (P.byNotes && P.unreleased && now - midi.lastNote > 3000) {
+  if (P.byNotes && P.unreleased && now - tetris.lastDrop > 3000) {
     // No one playing: keep a slow trickle going (about 45 s for the lot),
     // so the picture never stalls half-built.
     const every = Math.max(16, 45000 / P.count);
@@ -1951,15 +1996,110 @@ async function playVideo() {
 // Actions
 // ---------------------------------------------------------------------------
 
-function snapshot() {
+// Snapshots go into a tray (in memory, this tab only) rather than
+// straight to a download: a download can pop up a prompt or a downloads
+// bar, take the focus and drop you out of full screen mid-show. You save
+// them from the tray (Photo's badge, or 🖼 under the toolbar) afterwards.
+const snaps = []; // { blob, url, name }
+const MAX_SNAPS = 60;
+
+function snapshot({ quiet = false } = {}) {
+  if (!hasSource()) {
+    if (!quiet) toast('Start the camera or a video first');
+    return;
+  }
   out.toBlob((blob) => {
-    const a = document.createElement('a');
-    a.href = URL.createObjectURL(blob);
-    a.download = `emoji-fied-${Date.now()}.png`;
-    a.click();
-    setTimeout(() => URL.revokeObjectURL(a.href), 1000);
-    toast('Snapshot saved');
+    if (!blob) return;
+    const d = new Date(), pad = (n) => String(n).padStart(2, '0');
+    const name = `emoji-fied-${d.getFullYear()}${pad(d.getMonth() + 1)}${pad(d.getDate())}-${pad(d.getHours())}${pad(d.getMinutes())}${pad(d.getSeconds())}-${snaps.length + 1}.png`;
+    snaps.push({ blob, url: URL.createObjectURL(blob), name });
+    if (snaps.length > MAX_SNAPS) URL.revokeObjectURL(snaps.shift().url);
+    syncSnaps();
+    ui.snap.classList.remove('snapped');
+    void ui.snap.offsetWidth;
+    ui.snap.classList.add('snapped');
+    if (!quiet) liveToast(`📸 Kept in Snapshots (${snaps.length})`);
   }, 'image/png');
+}
+
+function syncSnaps() {
+  const n = snaps.length;
+  ui.snapBadge.hidden = !n;
+  ui.snapBadge.textContent = n;
+  ui.snapTray.hidden = !n;
+  ui.snapTray.textContent = `🖼 ${n} snapshot${n === 1 ? '' : 's'} · save or share`;
+  ui.snapsItem.textContent = n ? `🖼 Snapshots (${n})` : '🖼 Snapshots';
+  ui.snapsItem.disabled = !n;
+  if (!ui.snapSheet.hidden) renderSnapGrid();
+}
+
+function renderSnapGrid() {
+  ui.snapGrid.replaceChildren(
+    ...snaps.map((snap) => {
+      const b = document.createElement('button');
+      b.type = 'button';
+      b.title = `Save ${snap.name}`;
+      const img = document.createElement('img');
+      img.src = snap.url;
+      img.alt = snap.name;
+      b.append(img);
+      b.addEventListener('click', () => saveSnaps([snap]));
+      return b;
+    })
+  );
+}
+
+function openSnaps() {
+  if (!snaps.length) return;
+  closeMenu();
+  renderSnapGrid();
+  ui.snapSheet.hidden = false;
+}
+
+function closeSnaps() {
+  ui.snapSheet.hidden = true;
+}
+
+// Phones and Safari share the files (to Photos, AirDrop...); elsewhere
+// they download one after another.
+async function saveSnaps(list) {
+  const files = list.map((s) => new File([s.blob], s.name, { type: 'image/png' }));
+  if (navigator.canShare?.({ files })) {
+    try {
+      await navigator.share({ files });
+      return;
+    } catch (err) {
+      if (err.name === 'AbortError') return;
+    }
+  }
+  list.forEach((snap, i) =>
+    setTimeout(() => {
+      const a = document.createElement('a');
+      a.href = snap.url;
+      a.download = snap.name;
+      a.click();
+    }, i * 250)
+  );
+}
+
+function clearSnaps() {
+  for (const snap of snaps) URL.revokeObjectURL(snap.url);
+  snaps.length = 0;
+  syncSnaps();
+  closeSnaps();
+}
+
+// ---- More menu and shortcuts ------------------------------------------------
+
+function toggleMenu(open = ui.moreMenu.hidden) {
+  ui.moreMenu.hidden = !open;
+  ui.moreBtn.setAttribute('aria-expanded', String(open));
+}
+const closeMenu = () => toggleMenu(false);
+
+function toggleKeys(open = ui.keysSheet.hidden) {
+  closeMenu();
+  ui.keysSheet.hidden = !open;
 }
 
 function frameAsText() {
@@ -2046,6 +2186,7 @@ const sound = {
   avg: 0,
   lastBeat: 0,
   lastShuffle: 0,
+  beats: 0, // counted for "Shuffle the look every N beats"
   kick: 0, // 1 on a beat, decays quickly: flash, shake, zoom punch
   hue: 0, // degrees of hue shift, kicked on beats, eases back to 0
   ripples: [], // beat waves: { t0, shape, rot, spin, dir, hue, maxD }
@@ -2206,12 +2347,13 @@ function drawBeatOutlines(c, fx) {
   c.restore();
 }
 
-// MIDI on its own (React to sound off) pulses.
-const soundPulses = () => ui.sound.value === 'pulse' || ui.sound.value === 'both' || (midi.on && ui.sound.value === 'off');
-const soundShuffles = () => ui.sound.value === 'shuffle' || ui.sound.value === 'both';
+// The Beat tab: sound (microphone, or a video's or tab's own audio), MIDI
+// and a tempo can each drive the effects; "On the beat" says what they do.
+const micOn = () => ui.mic.checked;
+
 // Per-frame sound effects for the renderer, or null when off or silent.
 function soundFx() {
-  if ((!sound.analyser && !midi.on) || !soundPulses()) return null;
+  if (!(sound.analyser || midi.on || tempoOn())) return null;
   const strength = +ui.fxStrength.value;
   if (strength <= 0) return null;
   const now = performance.now();
@@ -2228,10 +2370,11 @@ function soundFx() {
       rotNow: rp.rot + rp.spin * age,
     });
   }
+  const flash = ui.beatFlash.checked;
   const fx = {
-    swell: strength * sound.level * 1.5,
-    kick: strength * sound.kick,
-    hue: strength * (sound.hue + midi.bend * 90),
+    swell: ui.beatPulse.checked ? strength * sound.level * 1.5 : 0,
+    kick: flash ? strength * sound.kick : 0,
+    hue: flash ? strength * (sound.hue + midi.bend * 90) : 0,
     ripples,
     strength,
     cx: out.width / 2,
@@ -2289,7 +2432,7 @@ function drawCell(c, pal, e, x, y, cellW, cellH, fx, photo, bright) {
 // file's soundtrack, a shared tab's audio), otherwise to the microphone.
 // Called when sound is turned on and whenever the source changes.
 async function connectSoundInput() {
-  if (ui.sound.value === 'off') return;
+  if (!micOn()) return;
   // Create/resume the audio context synchronously inside the user's tap;
   // iOS only lets audio start from a gesture.
   const ctx = ensureAudioCtx();
@@ -2351,31 +2494,32 @@ function stopMic() {
   dbg('microphone off');
 }
 
-// What the Sound tab shows depends on the sound mode and on MIDI.
+// Each source on the Beat tab shows its own settings while it's on.
 function syncSoundUI() {
-  const off = ui.sound.value === 'off';
-  ui.meter.hidden = off && !midi.on;
-  ui.soundOpts.hidden = off && !midi.on;
-  ui.sensField.hidden = off; // sensitivity is for the microphone only
-  ui.soundDot.hidden = off && !midi.on; // a dot on the Sound tab while it's on
+  ui.micOpts.hidden = !micOn();
+  ui.midiOpts.hidden = !ui.midi.checked;
+  ui.tempoBox.hidden = !ui.tempoSync.checked;
+  ui.meter.hidden = !micOn() && !midi.on;
+  ui.soundDot.hidden = !micOn() && !ui.midi.checked && !ui.tempoSync.checked; // a dot on the tab while any is on
+  const what = state.source === 'file' && state.fileKind === 'video' ? 'the video’s sound'
+    : state.source === 'screen' && media.screenAudio ? 'the shared tab’s sound' : 'the microphone';
+  ui.micStatus.textContent = `Listening to ${what}.`;
 }
 
 async function onSoundModeChange() {
-  const mode = ui.sound.value;
   syncSoundUI();
-  if (mode === 'off') {
+  if (!micOn()) {
     stopMic();
     return;
   }
   if (sound.analyser) return;
   try {
     await connectSoundInput();
-    const what = state.source === 'file' && state.fileKind === 'video' ? 'the video' : state.source === 'screen' && media.screenAudio ? 'the shared tab' : null;
-    if (what) toast(`🎵 Reacting to ${what}’s sound`);
-    else toast(mode === 'pulse' ? '🎤 Pulsing to sound' : '🎤 Listening for beats');
+    syncSoundUI();
+    toast(`🎤 ${ui.micStatus.textContent}`);
   } catch (err) {
     dbg('microphone failed:', err.name, err.message);
-    ui.sound.value = 'off';
+    ui.mic.checked = false;
     syncSoundUI();
     toast(err.name === 'NotAllowedError' ? 'Microphone permission was denied' : 'Couldn’t start the microphone');
   }
@@ -2385,11 +2529,12 @@ async function onSoundModeChange() {
 function updateSound() {
   if (midi.on) updateMidi();
   if (!sound.analyser) {
-    if (!midi.on) return;
-    // MIDI only: notes set the kick and hue, held notes the level.
+    if (!midi.on && !tempoOn()) return;
+    // MIDI or tempo only: notes and beats set the kick and hue, held
+    // notes the level.
     sound.kick *= 0.86;
     sound.hue *= 0.96;
-    sound.level = midi.level;
+    sound.level = midi.on ? midi.level : 0;
     ui.meterFill.style.transform = `scaleX(${sound.level.toFixed(3)})`;
     return;
   }
@@ -2423,25 +2568,32 @@ function updateSound() {
   sound.avg = sound.avg * 0.93 + rms * 0.07;
   sound.kick *= 0.86;
   sound.hue *= 0.96;
-  if (isBeat) {
-    sound.kick = 1;
-    sound.hue += (Math.random() < 0.5 ? -1 : 1) * (50 + Math.random() * 60);
-    onBeat(now);
-  }
+  // With tempo sync on, the beat comes from the tempo, not the microphone.
+  if (isBeat && !tempoOn()) beatHit(now, 1, randomHueKick());
   ui.meterFill.style.transform = `scaleX(${sound.level.toFixed(3)})`;
 }
 
-// What every beat does, heard or played: a wave, the meter flash, a shuffle.
-function onBeat(now) {
+const randomHueKick = () => (Math.random() < 0.5 ? -1 : 1) * (50 + Math.random() * 60);
+
+// What every beat does, heard, played or from the tempo ("On the beat"):
+// the kick (flash, shake, zoom punch) and hue nudge, a beat shape, the
+// meter flash, a look shuffle every so many beats, and Tetris drops (a
+// played note drops them where its pitch says).
+function beatHit(now, power, hueNudge, note) {
   sound.lastBeat = now;
-  if (soundPulses()) spawnWave(now);
+  sound.kick = Math.max(sound.kick, power);
+  sound.hue += hueNudge;
+  spawnWave(now);
   ui.meter.classList.remove('beat');
   void ui.meter.offsetWidth;
   ui.meter.classList.add('beat');
-  if (soundShuffles() && hasSource() && !state.paused && now - sound.lastShuffle > 600) {
+  sound.beats++;
+  const every = +ui.beatShuffle.value;
+  if (every && sound.beats % every === 0 && hasSource() && !state.paused && now - sound.lastShuffle > 300) {
     sound.lastShuffle = now;
     randomize({ quiet: true, keepDetail: true });
   }
+  if (ui.beatTetris.checked) note ? tetrisNote(note.n, note.vel, now) : tetrisBeat(now);
 }
 
 // ---- MIDI ------------------------------------------------------------------
@@ -2460,6 +2612,7 @@ const midi = {
   bend: 0, // -1..1
   mod: 0, // 0..1
   lastNote: 0,
+  names: [],
   lo: 60, // the range of notes played so far, for Tetris bands
   hi: 72,
 };
@@ -2472,7 +2625,12 @@ function updateMidi() {
 
 function onMidiMessage(e) {
   const [status, a = 0, b = 0] = e.data;
+  if (status >= 0xf8) return onMidiRealtime(status, e.timeStamp); // clock, start, stop
   const type = status & 0xf0;
+  // Notes and controllers mapped with MIDI learn (or being learned) only
+  // work their control.
+  if ((type === 0x80 || type === 0x90 || type === 0xb0) && midiControl(type, (status & 0x0f) + 1, a, b)) return;
+  if (!midi.on) return; // "React to MIDI" is off
   const now = performance.now();
   if (type === 0x90 && b > 0) {
     const vel = b / 127;
@@ -2480,10 +2638,8 @@ function onMidiMessage(e) {
     midi.lastNote = now;
     midi.lo = Math.min(midi.lo, a);
     midi.hi = Math.max(midi.hi, a);
-    sound.kick = Math.max(sound.kick, 0.4 + 0.6 * vel);
-    sound.hue += ((a % 12) - 5.5) * 12 * (0.5 + vel); // each pitch its own nudge
-    onBeat(now);
-    tetrisNote(a, vel, now);
+    // As hard as it was played; each pitch nudges the hue its own way.
+    beatHit(now, 0.4 + 0.6 * vel, ((a % 12) - 5.5) * 12 * (0.5 + vel), { n: a, vel });
   } else if (type === 0x80 || type === 0x90) {
     midi.held.delete(a);
   } else if (type === 0xb0) {
@@ -2494,6 +2650,8 @@ function onMidiMessage(e) {
   }
 }
 
+// Every input gets the handler as soon as there's access: "React to MIDI",
+// MIDI learn and MIDI clock all listen through it.
 function connectMidiInputs() {
   const names = [];
   for (const input of midi.access.inputs.values()) {
@@ -2502,48 +2660,58 @@ function connectMidiInputs() {
   }
   if (names.length && !midi.devices) toast(`🎹 ${names[0]} connected`);
   midi.devices = names.length;
-  ui.midiStatus.textContent = names.length
-    ? `🎹 Listening to ${names.join(', ')}. Play away!`
+  midi.names = names;
+  syncMidiStatus();
+}
+
+const MIDI_HINT = ui.midiStatus.textContent;
+function syncMidiStatus() {
+  ui.midiStatus.textContent = !midi.on ? MIDI_HINT
+    : midi.devices ? `🎹 Listening to ${midi.names.join(', ')}. Play away!`
     : 'No MIDI device found. Plug one in (or turn on a virtual MIDI port) and it connects by itself.';
 }
 
-async function enableMidi() {
+// Ask for MIDI once; quiet: no toasts (connecting by itself on load).
+async function midiAccess(quiet = false) {
+  if (midi.access) return midi.access;
   if (!navigator.requestMIDIAccess) {
-    ui.midi.checked = false;
-    toast('MIDI needs Chrome, Edge or Firefox on a computer');
-    return;
+    if (!quiet) toast('MIDI needs Chrome, Edge or Firefox on a computer');
+    return null;
   }
   try {
-    midi.access = midi.access || (await navigator.requestMIDIAccess());
+    midi.access = await navigator.requestMIDIAccess();
   } catch (err) {
     dbg('MIDI failed:', err.name, err.message);
+    if (!quiet) toast(err.name === 'SecurityError' || err.name === 'NotAllowedError' ? 'MIDI permission was denied' : 'Couldn’t start MIDI');
+    return null;
+  }
+  midi.access.onstatechange = connectMidiInputs;
+  connectMidiInputs();
+  return midi.access;
+}
+
+async function enableMidi() {
+  if (!(await midiAccess())) {
     ui.midi.checked = false;
-    toast(err.name === 'SecurityError' || err.name === 'NotAllowedError' ? 'MIDI permission was denied' : 'Couldn’t start MIDI');
     return;
   }
   if (!ui.midi.checked) return; // turned off while the permission prompt was up
   midi.on = true;
-  midi.access.onstatechange = connectMidiInputs;
-  connectMidiInputs();
+  syncMidiStatus();
   syncSoundUI();
   dbg(`MIDI on, ${midi.devices} input(s)`);
 }
 
 function disableMidi() {
   midi.on = false;
-  midi.devices = 0;
   midi.held.clear();
   midi.level = midi.bend = midi.mod = 0;
-  if (midi.access) {
-    midi.access.onstatechange = null;
-    for (const input of midi.access.inputs.values()) input.onmidimessage = null;
-  }
-  if (!sound.analyser) {
+  if (!sound.analyser && !tempoOn()) {
     sound.level = sound.kick = sound.hue = 0;
     sound.ripples = [];
     ui.meterFill.style.transform = 'scaleX(0)';
   }
-  ui.midiStatus.textContent = 'Play a keyboard or drum pads: notes hit like beats, and with 🧱 Tetris on they drop the pieces (low notes on the left, high notes on the right).';
+  syncMidiStatus();
   syncSoundUI();
 }
 
@@ -2774,8 +2942,8 @@ const BLACKOUT_FADE_MS = 600;
 const OUTPUT_IDLE_TEXT = ui.outputStatus.textContent;
 const TOUCH_ONLY = matchMedia('(hover: none)').matches;
 const SCENES_HINT = TOUCH_ONLY
-  ? 'Tap an empty slot to save the current look there, a full one to switch to it. “Save to a slot…” saves over one.'
-  : 'Press 1–9 to switch to a scene, Shift + 1–9 to save the current look there. Clicking an empty slot saves to it too.';
+  ? 'Tap an empty slot to save the look there, a full one to switch to it.'
+  : '1–9 switches, Shift + 1–9 saves. Clicking an empty slot saves too.';
 
 // ---- Output window ---------------------------------------------------------
 // A second window with only the picture, for the projector or a second
@@ -2788,7 +2956,7 @@ function openOutput() {
     show.win.focus();
     return;
   }
-  const win = window.open('output.html?v=29', 'emojiFiedOutput', 'popup,width=960,height=540');
+  const win = window.open('output.html?v=31', 'emojiFiedOutput', 'popup,width=960,height=540');
   if (!win) {
     toast('Allow pop-ups for this site to open the output window');
     return;
@@ -2867,7 +3035,7 @@ function tickLive(now) {
     show.black = target ? Math.min(1, show.black + step) : Math.max(0, show.black - step);
   }
   // The strobe punch-in blacks out every other beat of its own (6 Hz).
-  const strobeDark = punchOn('strobe') && Math.floor((now - punch.strobeAt) / STROBE_HALF_MS) % 2 === 0;
+  const strobeDark = punchOn('strobe') && strobeIsDark(now);
   const dark = strobeDark ? 1 : show.black;
   // With an output window this one only dims, so you can still see.
   const shown = dark * (show.canvas ? 0.6 : 1);
@@ -2884,7 +3052,7 @@ function updateLiveUI() {
   ui.outputBtn.classList.toggle('live', on);
   ui.outputClose.hidden = !on;
   ui.outputStatus.textContent = on
-    ? 'The audience sees the output window. Drag it to the projector and double-click it for full screen. The keys below work in either window.'
+    ? 'Live. Drag it to the projector and double-click it for full screen; keys work in either window.'
     : OUTPUT_IDLE_TEXT;
   ui.blackout.classList.toggle('labelled', on);
   ui.blackout.classList.toggle('on', show.blackOn);
@@ -2918,10 +3086,6 @@ function safeLook() {
       : el.defaultValue;
   }
   applyScene(scene);
-  if (ui.sound.value === 'shuffle' || ui.sound.value === 'both') {
-    ui.sound.value = ui.sound.value === 'both' ? 'pulse' : 'off';
-    onSoundModeChange();
-  }
   show.scene = 0;
   renderScenes();
   liveToast('🛟 Safe look');
@@ -2933,14 +3097,14 @@ function safeLook() {
 // it's pressed again. They change only the live picture, never posters.
 
 const PUNCHES = [
-  { id: 'strobe', key: 'q', icon: '⚡', label: 'Strobe', title: 'Flashes the picture on and off, 6 times a second' },
-  { id: 'stutter', key: 'w', icon: '🔁', label: 'Stutter', title: 'Choppy: the picture only moves 8 times a second' },
-  { id: 'hue', key: 'e', icon: '🌈', label: 'Hue spin', title: 'Spins the colours round the rainbow' },
-  { id: 'zoom', key: 'a', icon: '🔍', label: 'Zoom', title: 'Zooms into the middle of the picture' },
-  { id: 'invert', key: 'z', icon: '🌗', label: 'Invert', title: 'Flips the picture to its negative' },
-  { id: 'kaleido', key: 'x', icon: '🪞', label: 'Kaleido', title: 'Mirrors the picture four ways' },
-  { id: 'glitch', key: 'c', icon: '📼', label: 'Glitch', title: 'Tears bands of the picture sideways' },
-  { id: 'crunch', key: 'v', icon: '🧊', label: 'Crunch', title: 'Drops the detail to a quarter' },
+  { id: 'strobe', color: '#ffe04a', key: 'q', icon: '⚡', label: 'Strobe', title: 'Flashes the picture on and off, 6 times a second' },
+  { id: 'stutter', color: '#ff9a3d', key: 'w', icon: '🔁', label: 'Stutter', title: 'Choppy: the picture only moves 8 times a second' },
+  { id: 'hue', color: '#c38bff', key: 'e', icon: '🌈', label: 'Hue spin', title: 'Spins the colours round the rainbow' },
+  { id: 'zoom', color: '#5cb8ff', key: 'r', icon: '🔍', label: 'Zoom', title: 'Zooms into the middle of the picture' },
+  { id: 'invert', color: '#e9e3d6', key: 'z', icon: '🌗', label: 'Invert', title: 'Flips the picture to its negative' },
+  { id: 'kaleido', color: '#ff6fae', key: 'x', icon: '🪞', label: 'Kaleido', title: 'Mirrors the picture four ways' },
+  { id: 'glitch', color: '#3fe0d0', key: 'c', icon: '📼', label: 'Glitch', title: 'Tears bands of the picture sideways' },
+  { id: 'crunch', color: '#8fd4ff', key: 'v', icon: '🧊', label: 'Crunch', title: 'Drops the detail to a quarter' },
 ];
 const PUNCH_BY_KEY = Object.fromEntries(PUNCHES.map((p) => [p.key, p]));
 const STROBE_HALF_MS = 1000 / 12;
@@ -3020,13 +3184,31 @@ function dropCrunch() {
 
 const punchHue = () => (punchOn('hue') ? ((performance.now() - punch.hueAt) * 0.6) % 360 : 0);
 
-// Stutter: let a frame through only every 125 ms.
+// Stutter: let a frame through only every 125 ms, or on each 16th note
+// when synced to a tempo.
 function stutterHold() {
   if (!punchOn('stutter')) return false;
   const t = performance.now();
+  if (tempoOn()) {
+    const step = `${tempo.beat}:${Math.floor((t - tempo.t0) / (tempo.period / 4))}`;
+    if (step === punch.stutterStep) return true;
+    punch.stutterStep = step;
+    return false;
+  }
   if (t - punch.stutterAt < 125) return true;
   punch.stutterAt = t;
   return false;
+}
+
+// Strobe: 6 Hz, starting dark; on a tempo, a flash every 8th note, lit on
+// the beat (every quarter note instead when 8ths would pass 6 a second).
+function strobeIsDark(now) {
+  if (tempoOn()) {
+    let half = tempo.period / 4;
+    if (1000 / (2 * half) > 6) half = tempo.period / 2;
+    return Math.floor((now - tempo.t0) / half) % 2 === 1;
+  }
+  return Math.floor((now - punch.strobeAt) / STROBE_HALF_MS) % 2 === 0;
 }
 
 // Zoom: a smaller window on the middle of the frame, eased in and out.
@@ -3095,6 +3277,8 @@ function buildPunchButtons() {
     const b = document.createElement('button');
     b.type = 'button';
     b.className = 'punch';
+    b.style.setProperty('--pad', p.color);
+    b.dataset.learn = `punch:${p.id}`;
     b.title = `${p.title}. Hold ${p.key.toUpperCase()}; Shift + ${p.key.toUpperCase()} locks it on.`;
     const ico = document.createElement('span');
     ico.textContent = p.icon;
@@ -3116,9 +3300,305 @@ function buildPunchButtons() {
     punch.buttons[p.id] = b;
     ui.punches.append(b);
   }
-  ui.punchHint.textContent = TOUCH_ONLY
-    ? 'Hold a button to play it; let go to stop.'
-    : 'Hold a key or button to play it, let go to stop. Shift + the key (or Shift-click) locks it on.';
+  ui.punchHint.textContent = TOUCH_ONLY ? 'hold a pad' : 'Shift locks one on';
+}
+
+// ---- Tempo ------------------------------------------------------------------
+// A beat to lock to: tapped (K), or MIDI clock (24 ticks a beat) from
+// Ableton, Traktor, a drum machine... Clock wins while it's running. With
+// "Sync to tempo" on, beats come from here instead of the microphone: they
+// flash and send beat shapes, drop Tetris pieces, shuffle the look every so
+// often, and Strobe and Stutter lock to them.
+
+const tempo = {
+  bpm: 0,
+  period: 0, // ms per beat
+  source: '', // 'tap' or 'clock'
+  t0: 0, // when the last beat landed
+  nextAt: 0, // the next tapped-tempo beat
+  beat: 0, // beats since sync started
+  taps: [],
+  ticks: [], // recent clock tick times
+  tickCount: 0,
+  lastTick: -1e9,
+  stopped: false, // MIDI Stop received
+  shown: '',
+};
+const tempoOn = () => ui.tempoSync.checked && tempo.bpm > 0;
+const clockAlive = (now) => now - tempo.lastTick < 500;
+
+function setBpm(bpm, source) {
+  tempo.bpm = Math.min(300, Math.max(30, bpm));
+  tempo.period = 60000 / tempo.bpm;
+  tempo.source = source;
+  syncTempoUI();
+}
+
+function syncTempoUI() {
+  const text = tempo.bpm ? `${Math.round(tempo.bpm)} BPM · ${tempo.source === 'clock' ? 'MIDI clock' : 'tapped'}` : 'No tempo yet';
+  if (text !== tempo.shown) ui.tempoRead.textContent = tempo.shown = text;
+  syncSoundUI();
+}
+
+function tapTempo() {
+  const now = performance.now();
+  if (now - (tempo.taps[tempo.taps.length - 1] ?? -1e9) > 2000) tempo.taps = [];
+  tempo.taps.push(now);
+  if (tempo.taps.length > 8) tempo.taps.shift();
+  ui.tapBtn.classList.add('hit');
+  setTimeout(() => ui.tapBtn.classList.remove('hit'), 90);
+  if (!ui.tempoSync.checked) {
+    ui.tempoSync.checked = true; // tapping means you want it
+    syncTempoUI();
+  }
+  if (clockAlive(now) && !tempo.stopped) return; // the clock is in charge
+  tempo.stopped = false;
+  if (tempo.taps.length >= 2) {
+    setBpm(60000 / ((now - tempo.taps[0]) / (tempo.taps.length - 1)), 'tap');
+  }
+  if (tempo.bpm) {
+    // Every tap lands on a beat, so one tap re-aligns a running tempo.
+    onTempoBeat(now);
+    tempo.nextAt = now + tempo.period;
+  }
+}
+
+// System real-time messages: clock, start, continue, stop. Ticks are timed
+// by the message's own time stamp (when it reached the computer): a busy
+// page can deliver several at once, which would throw the BPM off.
+function onMidiRealtime(status, stamp) {
+  const now = performance.now();
+  if (status === 0xf8) {
+    tempo.ticks.push(stamp > 0 ? stamp : now);
+    if (tempo.ticks.length > 49) tempo.ticks.shift();
+    tempo.lastTick = now;
+    if (tempo.ticks.length >= 25) {
+      const n = tempo.ticks.length - 1;
+      const bpm = 60000 / (((tempo.ticks[n] - tempo.ticks[0]) / n) * 24);
+      // Smooth out jitter, but follow a real tempo change straight away.
+      setBpm(tempo.source === 'clock' && Math.abs(bpm - tempo.bpm) < tempo.bpm * 0.08 ? tempo.bpm * 0.8 + bpm * 0.2 : bpm, 'clock');
+    }
+    if (tempo.tickCount % 24 === 0 && tempo.bpm && !tempo.stopped) onTempoBeat(now);
+    tempo.tickCount++;
+  } else if (status === 0xfa || status === 0xfb) {
+    tempo.stopped = false; // start (from beat one) or continue
+    if (status === 0xfa) {
+      tempo.tickCount = 0;
+      tempo.beat = 0;
+    }
+  } else if (status === 0xfc) {
+    tempo.stopped = true; // the transport stopped: so do the beats
+  }
+}
+
+// Every frame: run the tapped tempo (the clock beats by itself).
+function tickTempo(now) {
+  if (!tempoOn() || clockAlive(now) || tempo.stopped) return;
+  if (!tempo.nextAt || now - tempo.nextAt > tempo.period) tempo.nextAt = now + tempo.period;
+  if (now >= tempo.nextAt) {
+    onTempoBeat(now);
+    tempo.nextAt += tempo.period;
+  }
+}
+
+function onTempoBeat(now) {
+  if (!ui.tempoSync.checked) return;
+  tempo.t0 = now;
+  tempo.beat++;
+  const n = (tempo.beat - 1) % 4;
+  ui.beatDots.forEach((d, i) => d.classList.toggle('on', i === n));
+  if (tempo.beat === 1) sound.beats = 0; // shuffles count from beat one
+  beatHit(now, 1, randomHueKick());
+}
+
+ui.tapBtn.addEventListener('click', tapTempo);
+ui.tempoSync.addEventListener('change', () => {
+  tempo.beat = 0;
+  tempo.nextAt = 0;
+  ui.beatDots.forEach((d) => d.classList.remove('on'));
+  syncTempoUI();
+});
+syncTempoUI(); // the browser may have restored the box
+
+// ---- MIDI learn ---------------------------------------------------------------
+// Map a controller's knobs, faders and pads to the controls: knobs and
+// faders (CC) move sliders, pads and keys (notes) or CC buttons press
+// buttons; punch-ins last as long as the pad is held. Mapped notes don't
+// also play as music. Mappings are kept in this browser.
+
+const learn = { active: false, pending: null, map: {}, cc: {} };
+const LEARN_RANGES = {
+  cols: ['Detail', ui.cols],
+  contrast: ['Contrast', ui.contrast],
+  bright: ['Brightness', ui.bright],
+  sat: ['Saturation', ui.sat],
+  shadows: ['Shadows', ui.shadows],
+  highlights: ['Highlights', ui.highlights],
+  fx: ['Effect strength', ui.fxStrength],
+};
+const LEARN_BUTTONS = {
+  blackout: ['Blackout', () => toggleBlackout()],
+  freeze: ['Freeze', () => ui.pause.click()],
+  safe: ['Safe look', () => safeLook()],
+  tap: ['Tap tempo', () => tapTempo()],
+  random: ['Randomize', () => randomize()],
+  tetris: ['Tetris on/off', () => ui.tetris.click()],
+};
+
+// What a learned id controls: { label, set(v) } for sliders, { label,
+// press() } for buttons, { label, down(), up() } for punch-ins.
+function learnTarget(id) {
+  const [kind, arg] = id.split(':');
+  if (kind === 'range' && LEARN_RANGES[arg]) {
+    const [label, el] = LEARN_RANGES[arg];
+    return {
+      label,
+      set(v) {
+        const min = +el.min, max = +el.max, step = +el.step || 1;
+        el.value = String(min + Math.round((v * (max - min)) / step) * step);
+        el.dispatchEvent(new Event('input'));
+      },
+    };
+  }
+  if (kind === 'scene') return { label: `Scene ${arg}`, press: () => recallScene(+arg) };
+  if (kind === 'punch') {
+    const p = PUNCHES.find((q) => q.id === arg);
+    return p && { label: `${p.icon} ${p.label} (hold)`, down: () => punchDown(arg), up: () => punchUp(arg) };
+  }
+  if (LEARN_BUTTONS[id]) return { label: LEARN_BUTTONS[id][0], press: LEARN_BUTTONS[id][1] };
+  return null;
+}
+
+const NOTE_NAMES = ['C', 'C♯', 'D', 'D♯', 'E', 'F', 'F♯', 'G', 'G♯', 'A', 'A♯', 'B'];
+function describeMidiKey(key) {
+  const [kind, ch, n] = key.split(':');
+  return kind === 'note' ? `Note ${NOTE_NAMES[n % 12]}${Math.floor(n / 12) - 1} · ch ${ch}` : `CC ${n} · ch ${ch}`;
+}
+
+// A note or CC message: learn it, or work what it's mapped to. Returns
+// true when it was used, so it doesn't also play as music.
+function midiControl(type, ch, n, value) {
+  const isNote = type !== 0xb0;
+  const key = `${isNote ? 'note' : 'cc'}:${ch}:${n}`;
+  const press = type === 0x90 && value > 0;
+  if (learn.pending && (press || !isNote)) {
+    bindMidi(key, learn.pending);
+    return true;
+  }
+  const id = learn.map[key];
+  const t = id && learnTarget(id);
+  if (!t) return false;
+  if (t.set) {
+    if (!isNote || press) t.set(value / 127); // a pad sets it by how hard it's hit
+    return true;
+  }
+  let down = press;
+  if (!isNote) {
+    // CC buttons send 127 when pressed and 0 when let go.
+    const was = (learn.cc[key] ?? 0) >= 64;
+    learn.cc[key] = value;
+    down = value >= 64;
+    if (down === was) return true;
+  }
+  if (t.down) (down ? t.down : t.up)();
+  else if (down) t.press();
+  return true;
+}
+
+function bindMidi(key, id) {
+  learn.map[key] = id;
+  storeMidiMap();
+  learnPending(null);
+  renderMidiMap();
+  toast(`🎹 ${describeMidiKey(key)} → ${learnTarget(id).label}`);
+  dbg(`MIDI learn: ${key} -> ${id}`);
+}
+
+function storeMidiMap() {
+  try {
+    localStorage.setItem('emojiFiedMidiMap', JSON.stringify(learn.map));
+  } catch {}
+}
+
+function renderMidiMap() {
+  const rows = Object.entries(learn.map).filter(([, id]) => learnTarget(id));
+  ui.midiMap.replaceChildren(
+    ...rows.map(([key, id]) => {
+      const row = document.createElement('div');
+      row.className = 'map-row';
+      const what = document.createElement('span');
+      const from = document.createElement('span');
+      from.className = 'from';
+      from.textContent = `${describeMidiKey(key)} → `;
+      what.append(from, learnTarget(id).label);
+      const x = document.createElement('button');
+      x.type = 'button';
+      x.textContent = '✕';
+      x.title = 'Remove this mapping';
+      x.addEventListener('click', () => {
+        delete learn.map[key];
+        storeMidiMap();
+        renderMidiMap();
+      });
+      row.append(what, x);
+      return row;
+    })
+  );
+}
+
+const LEARN_HINT = ui.learnHint.textContent;
+function learnPending(id) {
+  learn.pending = id;
+  document.querySelectorAll('.learn-pending').forEach((el) => el.classList.remove('learn-pending'));
+  if (id) document.querySelector(`[data-learn="${id}"]`)?.classList.add('learn-pending');
+  ui.learnHint.textContent = !learn.active ? LEARN_HINT
+    : id ? `Now move a knob or fader, or hit a pad, for “${learnTarget(id).label}”…`
+    : 'Click a slider or button to map (dashed outlines, on any tab), then move a knob or hit a pad. Esc or Done when finished.';
+}
+
+async function setLearning(on) {
+  if (on && !(await midiAccess())) return;
+  learn.active = on;
+  document.body.classList.toggle('learning', on);
+  ui.learnBtn.setAttribute('aria-pressed', String(on));
+  ui.learnBtn.textContent = on ? 'Done' : 'Learn…';
+  learnPending(null);
+  if (on && !midi.devices) toast('No MIDI device found yet: plug one in');
+}
+
+// Tag what can be learned.
+for (const [k, [, el]] of Object.entries(LEARN_RANGES)) el.dataset.learn = `range:${k}`;
+ui.blackoutBtn.dataset.learn = 'blackout';
+ui.freezeBtn.dataset.learn = 'freeze';
+ui.safeBtn.dataset.learn = 'safe';
+ui.tapBtn.dataset.learn = 'tap';
+ui.random.dataset.learn = 'random';
+ui.tetris.closest('label').dataset.learn = 'tetris';
+
+// While learning, a click picks the control instead of using it.
+for (const ev of ['pointerdown', 'mousedown', 'touchstart', 'click']) {
+  document.addEventListener(ev, (e) => {
+    if (!learn.active) return;
+    const el = e.target.closest?.('[data-learn]');
+    if (!el) return;
+    e.preventDefault();
+    e.stopPropagation();
+    if (ev === 'pointerdown') learnPending(el.dataset.learn);
+  }, { capture: true, passive: false });
+}
+ui.learnBtn.addEventListener('click', () => setLearning(!learn.active));
+
+try {
+  learn.map = JSON.parse(localStorage.getItem('emojiFiedMidiMap') || '{}') || {};
+} catch {
+  learn.map = {};
+}
+renderMidiMap();
+if (!navigator.requestMIDIAccess) {
+  ui.learnBtn.hidden = true;
+  ui.learnHint.textContent = 'MIDI controllers and MIDI clock work in Chrome, Edge and Firefox on a computer.';
+} else if (Object.keys(learn.map).length) {
+  midiAccess(true); // your controller works straight away next time
 }
 
 // ---- Scenes -----------------------------------------------------------------
@@ -3129,7 +3609,7 @@ const sceneFields = () => ({
   style: ui.style, custom: ui.custom, cols: ui.cols, match: ui.match, ink: ui.ink,
   contrast: ui.contrast, bright: ui.bright, sat: ui.sat, shadows: ui.shadows, highlights: ui.highlights,
   invert: ui.invert, blank: ui.blank, tetris: ui.tetris,
-  fxStrength: ui.fxStrength, beatShape: ui.beatShape, beatOutline: ui.beatOutline,
+  fxStrength: ui.fxStrength, beatShape: ui.beatShape, beatOutline: ui.beatOutline, beatShuffle: ui.beatShuffle,
   twinkle: ui.twinkle, kenBurns: ui.kenBurns,
 });
 
@@ -3142,8 +3622,22 @@ function describeLook() {
   return bits.join(' · ');
 }
 
+// A small picture of the look, for the slot.
+function sceneThumb() {
+  if (!hasSource() || !out.width) return '';
+  const c = document.createElement('canvas');
+  c.width = 160;
+  c.height = Math.max(1, Math.round((160 * out.height) / out.width));
+  c.getContext('2d').drawImage(out, 0, 0, c.width, c.height);
+  try {
+    return c.toDataURL('image/jpeg', 0.7);
+  } catch {
+    return '';
+  }
+}
+
 function captureScene() {
-  const scene = { label: describeLook() };
+  const scene = { label: describeLook(), thumb: sceneThumb() };
   for (const [k, el] of Object.entries(sceneFields())) scene[k] = el.type === 'checkbox' ? el.checked : el.value;
   if (punch.crunchCols) scene.cols = String(punch.crunchCols); // the detail without Crunch held
   return scene;
@@ -3218,12 +3712,18 @@ function renderScenes() {
       const b = document.createElement('button');
       b.type = 'button';
       b.className = `scene${scene ? '' : ' empty'}${show.scene === n ? ' current' : ''}`;
+      b.dataset.learn = `scene:${n}`;
+      if (learn.pending === `scene:${n}`) b.classList.add('learn-pending');
       b.title = scene ? `${scene.label} (${n}; Shift + ${n} to save over it)` : `Empty: click or press Shift + ${n} to save the current look`;
       const num = document.createElement('b');
       num.textContent = n;
       const what = document.createElement('span');
       what.className = 'what';
       what.textContent = scene ? scene.label : 'Empty';
+      if (scene?.thumb) {
+        b.classList.add('has-thumb');
+        b.style.backgroundImage = `url("${scene.thumb}")`;
+      }
       b.append(num, what);
       // An empty slot saves straight away; a full one needs Save mode.
       b.addEventListener('click', () => (show.saving || !scene ? saveScene(n) : recallScene(n)));
@@ -3245,17 +3745,32 @@ renderScenes();
 buildPunchButtons();
 window.addEventListener('blur', () => releasePunches());
 
+// The logo's dot: a little emoji that keeps changing its mind.
+const LOGO_DOTS = ['😀', '🔥', '🌈', '✨', '🤩', '🍩', '💀', '🐸', '💖', '⭐'];
+let logoDotAt = 0;
+function popLogoDot() {
+  logoDotAt = (logoDotAt + 1 + Math.floor(Math.random() * (LOGO_DOTS.length - 1))) % LOGO_DOTS.length;
+  ui.logoDot.textContent = LOGO_DOTS[logoDotAt];
+  ui.logoDot.classList.remove('pop');
+  void ui.logoDot.offsetWidth;
+  ui.logoDot.classList.add('pop');
+}
+setInterval(() => !document.hidden && popLogoDot(), 4000);
+ui.random.addEventListener('click', popLogoDot);
+
 // ---------------------------------------------------------------------------
-// Tabs: Look / Sound / Photo / Live, one open at a time (the choice is remembered)
+// Tabs: Look / Beat / Live / Photo, one open at a time (the choice is remembered)
 // ---------------------------------------------------------------------------
 
 let currentTab = 'look';
 
 function setTab(name) {
-  if (name === 'photo' && !isPhotoSource()) name = 'look';
+  if (name === 'sound') name = 'beat'; // its old name, maybe remembered
+  if ((name === 'photo' && !isPhotoSource()) || !ui.tabPanels.some((p) => p.dataset.panel === name)) name = 'look';
   currentTab = name;
   for (const b of ui.tabButtons) b.setAttribute('aria-selected', String(b.dataset.tab === name));
   for (const p of ui.tabPanels) p.hidden = p.dataset.panel !== name;
+  ui.controls.dataset.tab = name; // each tab has its own signal colour
   try { localStorage.setItem('emojiFiedTab', name); } catch {}
 }
 
@@ -3275,7 +3790,18 @@ const ADJUSTMENTS = [
   [ui.highlights, ui.highlightsOut, signed],
 ];
 
+// Faders fill with the tab's colour up to their value (CSS reads --p).
+function paintRange(el) {
+  const min = +el.min || 0, max = +el.max || 100;
+  el.style.setProperty('--p', `${((+el.value - min) / (max - min)) * 100}%`);
+}
+function paintRanges() {
+  document.querySelectorAll('input[type="range"]').forEach(paintRange);
+}
+document.addEventListener('input', (e) => e.target.type === 'range' && paintRange(e.target));
+
 function syncLabels() {
+  paintRanges(); // values set from code (randomize, scenes, reset) too
   for (const [input, output, fmt] of ADJUSTMENTS) output.textContent = fmt(+input.value);
   ui.sensOut.textContent = `${(+ui.sens.value).toFixed(1)}×`;
   ui.posterColsOut.textContent = `${ui.posterCols.value} cols`;
@@ -3312,7 +3838,10 @@ ui.resetAdjust.addEventListener('click', resetAdjustments);
 for (const el of [ui.match, ui.ink, ui.mirror, ui.invert, ui.blank]) {
   el.addEventListener('change', () => state.paused && render());
 }
-ui.flip.addEventListener('click', switchCamera);
+ui.flip.addEventListener('click', () => {
+  closeMenu();
+  switchCamera();
+});
 ui.flipFab.addEventListener('click', switchCamera);
 ui.full.addEventListener('click', enterFullscreen);
 ui.exitFull.addEventListener('click', exitFullscreen);
@@ -3413,15 +3942,33 @@ if (!canShareScreen()) {
   ui.startScreen.hidden = true;
   ui.sourceButtons.find((b) => b.dataset.source === 'screen').hidden = true;
 }
-ui.snap.addEventListener('click', snapshot);
-ui.copy.addEventListener('click', copyText);
+ui.snap.addEventListener('click', () => snapshot());
+ui.copy.addEventListener('click', () => {
+  closeMenu();
+  copyText();
+});
+ui.moreBtn.addEventListener('click', (e) => {
+  e.stopPropagation();
+  toggleMenu();
+});
+document.addEventListener('click', (e) => !ui.moreMenu.hidden && !ui.moreMenu.contains(e.target) && closeMenu());
+ui.snapsItem.addEventListener('click', openSnaps);
+ui.snapTray.addEventListener('click', openSnaps);
+ui.snapSaveAll.addEventListener('click', () => saveSnaps(snaps));
+ui.snapClear.addEventListener('click', clearSnaps);
+ui.snapClose.addEventListener('click', closeSnaps);
+ui.keysItem.addEventListener('click', () => toggleKeys(true));
+ui.keysBtn.addEventListener('click', () => toggleKeys(true));
+ui.keysClose.addEventListener('click', () => toggleKeys(false));
+syncSnaps();
 ui.random.addEventListener('click', () => randomize());
-ui.sound.addEventListener('change', onSoundModeChange);
+ui.mic.addEventListener('change', onSoundModeChange);
+ui.mic.checked = false; // starts off, even if the browser restored the box
 ui.midi.addEventListener('change', () => (ui.midi.checked ? enableMidi() : disableMidi()));
 ui.midi.checked = false; // MIDI starts off, even if the browser restored the box
 if (!navigator.requestMIDIAccess) {
   ui.midi.disabled = true;
-  ui.midiStatus.textContent = 'MIDI works in Chrome, Edge and Firefox on a computer. This browser doesn’t support it.';
+  ui.midiChip.title = 'MIDI works in Chrome, Edge and Firefox on a computer';
 }
 const onBeatShapeChange = () => {
   const off = ui.beatShape.value === 'off';
@@ -3469,14 +4016,23 @@ function onKey(e) {
     if (!e.repeat) punchDown(p.id, e.shiftKey);
     return;
   }
+  if (e.key === 'Escape' && learn.active) {
+    setLearning(false);
+    return;
+  }
+  // Record and switching camera deliberately have no keys: one slip of
+  // the hand mid-show shouldn't start a recording or cut the camera.
+  if (e.key === 'k') tapTempo();
   if (e.key === 'b') toggleBlackout();
   if (e.key === ' ') { e.preventDefault(); ui.pause.click(); }
-  if (e.key === 's') snapshot();
-  if (e.key === 'r') ui.record.click();
+  if (e.key === 'p') snapshot({ quiet: true });
   if (e.key === 'd') randomize();
-  if (e.key === 'f') switchCamera();
   if (e.key === 't') ui.tetris.click();
-  if (e.key === 'Escape' && !ui.posterSheet.hidden) closePoster();
+  if (e.key === '?') toggleKeys();
+  if (e.key === 'Escape' && !ui.moreMenu.hidden) closeMenu();
+  else if (e.key === 'Escape' && !ui.keysSheet.hidden) toggleKeys(false);
+  else if (e.key === 'Escape' && !ui.snapSheet.hidden) closeSnaps();
+  else if (e.key === 'Escape' && !ui.posterSheet.hidden) closePoster();
   else if (e.key === 'Escape' && !ui.player.hidden) closePlayer();
   else if (e.key === 'Escape' && !ui.clip.hidden) closeClip();
   else if (e.key === 'Escape' && document.body.classList.contains('immersive')) exitFullscreen();
@@ -3496,5 +4052,5 @@ try {
 } catch (err) {
   ui.error.textContent = `Setup failed: ${err.message}`;
 }
-window.emojiFiedReady = '29';
-dbg('app.js v29 initialised');
+window.emojiFiedReady = '31';
+dbg('app.js v31 initialised');
