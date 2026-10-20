@@ -69,6 +69,8 @@ const ui = {
   soundDot: $('#soundDot'),
   tabButtons: [...document.querySelectorAll('[data-tab]')],
   tabPanels: [...document.querySelectorAll('[data-panel]')],
+  controls: $('.controls'),
+  logoDot: $('#logoDot'),
   kenBurns: $('#kenBurns'),
   tilt: $('#tilt'),
   tiltOpts: $('#tiltOpts'),
@@ -481,6 +483,7 @@ const squareCells = () => state.kind === 'emoji' || state.kind === 'skull';
 function layout() {
   state.cols = +ui.cols.value;
   ui.colsOut.textContent = `${state.cols} cols`;
+  paintRange(ui.cols);
 
   const [vw, vh] = frameSize();
   const aspect =
@@ -3094,14 +3097,14 @@ function safeLook() {
 // it's pressed again. They change only the live picture, never posters.
 
 const PUNCHES = [
-  { id: 'strobe', key: 'q', icon: '⚡', label: 'Strobe', title: 'Flashes the picture on and off, 6 times a second' },
-  { id: 'stutter', key: 'w', icon: '🔁', label: 'Stutter', title: 'Choppy: the picture only moves 8 times a second' },
-  { id: 'hue', key: 'e', icon: '🌈', label: 'Hue spin', title: 'Spins the colours round the rainbow' },
-  { id: 'zoom', key: 'r', icon: '🔍', label: 'Zoom', title: 'Zooms into the middle of the picture' },
-  { id: 'invert', key: 'z', icon: '🌗', label: 'Invert', title: 'Flips the picture to its negative' },
-  { id: 'kaleido', key: 'x', icon: '🪞', label: 'Kaleido', title: 'Mirrors the picture four ways' },
-  { id: 'glitch', key: 'c', icon: '📼', label: 'Glitch', title: 'Tears bands of the picture sideways' },
-  { id: 'crunch', key: 'v', icon: '🧊', label: 'Crunch', title: 'Drops the detail to a quarter' },
+  { id: 'strobe', color: '#ffe04a', key: 'q', icon: '⚡', label: 'Strobe', title: 'Flashes the picture on and off, 6 times a second' },
+  { id: 'stutter', color: '#ff9a3d', key: 'w', icon: '🔁', label: 'Stutter', title: 'Choppy: the picture only moves 8 times a second' },
+  { id: 'hue', color: '#c38bff', key: 'e', icon: '🌈', label: 'Hue spin', title: 'Spins the colours round the rainbow' },
+  { id: 'zoom', color: '#5cb8ff', key: 'r', icon: '🔍', label: 'Zoom', title: 'Zooms into the middle of the picture' },
+  { id: 'invert', color: '#e9e3d6', key: 'z', icon: '🌗', label: 'Invert', title: 'Flips the picture to its negative' },
+  { id: 'kaleido', color: '#ff6fae', key: 'x', icon: '🪞', label: 'Kaleido', title: 'Mirrors the picture four ways' },
+  { id: 'glitch', color: '#3fe0d0', key: 'c', icon: '📼', label: 'Glitch', title: 'Tears bands of the picture sideways' },
+  { id: 'crunch', color: '#8fd4ff', key: 'v', icon: '🧊', label: 'Crunch', title: 'Drops the detail to a quarter' },
 ];
 const PUNCH_BY_KEY = Object.fromEntries(PUNCHES.map((p) => [p.key, p]));
 const STROBE_HALF_MS = 1000 / 12;
@@ -3274,6 +3277,7 @@ function buildPunchButtons() {
     const b = document.createElement('button');
     b.type = 'button';
     b.className = 'punch';
+    b.style.setProperty('--pad', p.color);
     b.dataset.learn = `punch:${p.id}`;
     b.title = `${p.title}. Hold ${p.key.toUpperCase()}; Shift + ${p.key.toUpperCase()} locks it on.`;
     const ico = document.createElement('span');
@@ -3618,8 +3622,22 @@ function describeLook() {
   return bits.join(' · ');
 }
 
+// A small picture of the look, for the slot.
+function sceneThumb() {
+  if (!hasSource() || !out.width) return '';
+  const c = document.createElement('canvas');
+  c.width = 160;
+  c.height = Math.max(1, Math.round((160 * out.height) / out.width));
+  c.getContext('2d').drawImage(out, 0, 0, c.width, c.height);
+  try {
+    return c.toDataURL('image/jpeg', 0.7);
+  } catch {
+    return '';
+  }
+}
+
 function captureScene() {
-  const scene = { label: describeLook() };
+  const scene = { label: describeLook(), thumb: sceneThumb() };
   for (const [k, el] of Object.entries(sceneFields())) scene[k] = el.type === 'checkbox' ? el.checked : el.value;
   if (punch.crunchCols) scene.cols = String(punch.crunchCols); // the detail without Crunch held
   return scene;
@@ -3702,6 +3720,10 @@ function renderScenes() {
       const what = document.createElement('span');
       what.className = 'what';
       what.textContent = scene ? scene.label : 'Empty';
+      if (scene?.thumb) {
+        b.classList.add('has-thumb');
+        b.style.backgroundImage = `url("${scene.thumb}")`;
+      }
       b.append(num, what);
       // An empty slot saves straight away; a full one needs Save mode.
       b.addEventListener('click', () => (show.saving || !scene ? saveScene(n) : recallScene(n)));
@@ -3723,6 +3745,19 @@ renderScenes();
 buildPunchButtons();
 window.addEventListener('blur', () => releasePunches());
 
+// The logo's dot: a little emoji that keeps changing its mind.
+const LOGO_DOTS = ['😀', '🔥', '🌈', '✨', '🤩', '🍩', '💀', '🐸', '💖', '⭐'];
+let logoDotAt = 0;
+function popLogoDot() {
+  logoDotAt = (logoDotAt + 1 + Math.floor(Math.random() * (LOGO_DOTS.length - 1))) % LOGO_DOTS.length;
+  ui.logoDot.textContent = LOGO_DOTS[logoDotAt];
+  ui.logoDot.classList.remove('pop');
+  void ui.logoDot.offsetWidth;
+  ui.logoDot.classList.add('pop');
+}
+setInterval(() => !document.hidden && popLogoDot(), 4000);
+ui.random.addEventListener('click', popLogoDot);
+
 // ---------------------------------------------------------------------------
 // Tabs: Look / Beat / Live / Photo, one open at a time (the choice is remembered)
 // ---------------------------------------------------------------------------
@@ -3735,6 +3770,7 @@ function setTab(name) {
   currentTab = name;
   for (const b of ui.tabButtons) b.setAttribute('aria-selected', String(b.dataset.tab === name));
   for (const p of ui.tabPanels) p.hidden = p.dataset.panel !== name;
+  ui.controls.dataset.tab = name; // each tab has its own signal colour
   try { localStorage.setItem('emojiFiedTab', name); } catch {}
 }
 
@@ -3754,7 +3790,18 @@ const ADJUSTMENTS = [
   [ui.highlights, ui.highlightsOut, signed],
 ];
 
+// Faders fill with the tab's colour up to their value (CSS reads --p).
+function paintRange(el) {
+  const min = +el.min || 0, max = +el.max || 100;
+  el.style.setProperty('--p', `${((+el.value - min) / (max - min)) * 100}%`);
+}
+function paintRanges() {
+  document.querySelectorAll('input[type="range"]').forEach(paintRange);
+}
+document.addEventListener('input', (e) => e.target.type === 'range' && paintRange(e.target));
+
 function syncLabels() {
+  paintRanges(); // values set from code (randomize, scenes, reset) too
   for (const [input, output, fmt] of ADJUSTMENTS) output.textContent = fmt(+input.value);
   ui.sensOut.textContent = `${(+ui.sens.value).toFixed(1)}×`;
   ui.posterColsOut.textContent = `${ui.posterCols.value} cols`;

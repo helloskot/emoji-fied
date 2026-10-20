@@ -120,6 +120,19 @@ player links to Screen Mirroring steps. Recorded clips (⏺, up to 60 s; MP4 on
 Safari, with Save/Share to Photos on iPhone) have an AirPlay button too.
 For true full screen on iPhone, use Share → **Add to Home Screen**.
 
+## Design
+
+A pocket synth for your camera: warm charcoal panels, tactile keycap
+buttons, switches and fader-cap sliders, monospaced labels and readouts. Each
+tab has its own signal colour that its switches, faders and headers pick up
+(🎨 Look sunflower, 🎵 Beat sky, 🎬 Live bubblegum, 🖼 Photo mint); each
+punch-in pad has its own candy colour and glows while held; scene slots show a
+thumbnail of the saved look; and the logo's dot is an emoji that keeps
+changing its mind. Motion is switched off for anyone who prefers reduced
+motion. Type is [Bricolage Grotesque](https://github.com/ateliertriay/bricolage)
+and [DM Mono](https://github.com/googlefonts/dm-mono), both SIL Open Font
+License and bundled in `fonts/`, so nothing is fetched from elsewhere.
+
 ## Run it
 
 Camera access requires `https://` or `localhost`:

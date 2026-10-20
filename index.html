@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
-  <meta name="theme-color" content="#0b0b10" />
+  <meta name="theme-color" content="#0e0d11" />
   <!-- Installable: "Add to Home Screen" opens full screen, without Safari's toolbars -->
   <link rel="manifest" href="manifest.webmanifest" />
   <meta name="mobile-web-app-capable" content="yes" />
@@ -13,11 +13,13 @@
   <link rel="apple-touch-icon" href="icons/icon-180.png" />
   <title>Emoji-fied</title>
   <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🤩</text></svg>" />
+  <link rel="preload" href="fonts/bricolage-grotesque.woff2" as="font" type="font/woff2" crossorigin />
+  <link rel="preload" href="fonts/dm-mono-500.woff2" as="font" type="font/woff2" crossorigin />
   <link rel="stylesheet" href="style.css?v=31" />
 </head>
 <body>
   <header>
-    <h1>emoji<span>·</span>fied</h1>
+    <h1 class="logo" aria-label="emoji·fied">emoji<span class="logo-dot" id="logoDot" aria-hidden="true">😀</span>fied</h1>
     <span id="fps" class="fps" aria-live="off"></span>
   </header>
 
@@ -48,8 +50,9 @@
 
       <div class="overlay" id="overlay">
         <div class="overlay-card">
-          <div class="big">😀🔥🌈</div>
-          <p>Turn your camera, or any video, into emoji &amp; unicode art.</p>
+          <div class="big" aria-hidden="true"><span>😀</span><span>🔥</span><span>🌈</span></div>
+          <h2 class="hello">Turn anything into emoji.</h2>
+          <p class="lede">Your camera, a video or a GIF, drawn live in emoji &amp; unicode.</p>
           <button id="start" class="primary">Start camera</button>
           <div class="alt-sources">
             <button id="startFile" type="button">🎞 Play a video or GIF</button>
