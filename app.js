@@ -167,6 +167,7 @@ const ui = {
   moreMenu: $('#moreMenu'),
   snapsItem: $('#snapsItem'),
   keysItem: $('#keysItem'),
+  splitItem: $('#splitItem'),
   keysBtn: $('#keysBtn'),
   snapBadge: $('#snapBadge'),
   snapTray: $('#snapTray'),
@@ -3107,7 +3108,7 @@ function openOutput() {
     show.win.focus();
     return;
   }
-  const win = window.open('output.html?v=35', 'emojiFiedOutput', 'popup,width=960,height=540');
+  const win = window.open('output.html?v=36', 'emojiFiedOutput', 'popup,width=960,height=540');
   if (!win) {
     toast('Allow pop-ups for this site to open the output window');
     return;
@@ -4087,6 +4088,60 @@ window.addEventListener('blur', () => releasePunches());
 // Tablets held upright pin the picture along the top; the main controls
 // column pins under it as well, but only if it fits below the picture.
 const ctlMain = document.querySelector('.ctl-main');
+// ---- Split at the fold ----------------------------------------------------------
+// An iPhone Duo held upright and unfolded has its crease across the middle:
+// half-fold it like a laptop (tabletop) and the top half stands up. So the
+// picture takes the top half and the controls the bottom half. Where the
+// browser reports the fold (the Viewport Segments API: Safari 27.1 behind a
+// flag, Chrome on Android foldables), the split follows the real crease;
+// otherwise a narrow-tablet, touch-only, upright screen (the Duo's inner
+// screen is about 669 x 825) splits at its middle. ⋯ More turns it off.
+const FOLD_SHAPE = '(orientation: portrait) and (pointer: coarse) and (min-width: 600px) and (max-width: 699px) and (min-height: 700px)';
+let splitOff = false;
+try { splitOff = localStorage.getItem('emojiFiedSplit') === 'off'; } catch {}
+
+function creaseFromSegments() {
+  const segs = window.viewport?.segments;
+  if (!segs || segs.length !== 2) return null;
+  const [a, b] = [...segs].sort((p, q) => p.top - q.top);
+  // Stacked one above the other: a crease across the screen.
+  if (b.top >= a.bottom - 1 && Math.abs(a.width - b.width) < 2) return [a.bottom, b.top];
+  return null;
+}
+
+function fitFold() {
+  const seg = creaseFromSegments();
+  const shaped = matchMedia(FOLD_SHAPE).matches;
+  ui.splitItem.hidden = !seg && !shaped;
+  ui.splitItem.setAttribute('aria-checked', String(!splitOff));
+  ui.splitItem.textContent = `📐 Split at the fold: ${splitOff ? 'off' : 'on'}`;
+  let crease = null;
+  if (!splitOff) crease = seg || (shaped ? [innerHeight / 2 - 6, innerHeight / 2 + 6] : null);
+  document.body.classList.toggle('split', !!crease);
+  if (crease) {
+    document.body.style.setProperty('--crease-top', `${Math.round(crease[0])}px`);
+    document.body.style.setProperty('--crease-bottom', `${Math.round(crease[1])}px`);
+  }
+}
+
+// Folding fires a few resizes on the way (sizes that match no pose), so
+// wait for it to settle.
+let foldTimer = 0;
+const fitFoldSoon = () => {
+  clearTimeout(foldTimer);
+  foldTimer = setTimeout(fitFold, 150);
+};
+addEventListener('resize', fitFoldSoon);
+window.viewport?.addEventListener?.('resize', fitFoldSoon);
+navigator.devicePosture?.addEventListener?.('change', fitFoldSoon);
+ui.splitItem.addEventListener('click', () => {
+  splitOff = !splitOff;
+  try { localStorage.setItem('emojiFiedSplit', splitOff ? 'off' : 'on'); } catch {}
+  closeMenu();
+  fitFold();
+});
+fitFold();
+
 function fitTabletLayout() {
   const upright = matchMedia('(min-width: 700px) and (orientation: portrait)').matches;
   const stageH = ui.stage.getBoundingClientRect().height;
@@ -4426,5 +4481,5 @@ try {
 } catch (err) {
   ui.error.textContent = `Setup failed: ${err.message}`;
 }
-window.emojiFiedReady = '35';
-dbg('app.js v35 initialised');
+window.emojiFiedReady = '36';
+dbg('app.js v36 initialised');

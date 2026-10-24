@@ -237,6 +237,37 @@ main {
 
 /* Full screen. Native and iPhone "immersive" modes share the same look;
    kept as separate rules because an unknown selector drops a whole list. */
+/* Split at the fold (an iPhone Duo held upright, ready for tabletop): the
+   picture fills the top half, above the crease, and the controls scroll in
+   the bottom half. app.js finds the crease (--crease-top/-bottom): exactly,
+   where the browser reports the fold, otherwise the middle of the screen.
+   A band of background over the top half hides controls scrolling under. */
+body.split header { display: none; }
+body.split main {
+  grid-template-columns: minmax(0, 1fr);
+  padding-top: calc(var(--crease-bottom, 50vh) + 10px);
+}
+body.split::before {
+  content: '';
+  position: fixed;
+  inset: 0 0 auto;
+  height: var(--crease-top, 50vh);
+  background: var(--bg);
+  box-shadow: 0 8px 16px var(--bg);
+  z-index: 9;
+}
+body.split:not(.immersive) .stage:not(:fullscreen) {
+  position: fixed;
+  z-index: 10;
+  top: max(8px, env(safe-area-inset-top));
+  left: 50%;
+  transform: translateX(-50%);
+  width: auto;
+  height: calc(var(--crease-top, 50vh) - max(8px, env(safe-area-inset-top)) - 8px);
+  max-height: none;
+  max-width: calc(100vw - 24px);
+}
+
 body.immersive { overflow: hidden; }
 body.immersive .stage {
   max-height: none;
@@ -379,6 +410,13 @@ body.immersive .stage {
 
 /* Before anything starts, give the start screen room on phones. */
 .stage:has(> .overlay:not([hidden])) { min-height: min(440px, calc(100svh - 150px)); }
+/* Split at the fold: the start screen keeps to the top half too. */
+body.split .stage:has(> .overlay:not([hidden])) { min-height: 0; width: calc(100vw - 24px); }
+body.split .overlay { padding: 10px; overflow: auto; }
+body.split .overlay .big { font-size: 34px; }
+body.split .hello { margin-top: 6px; }
+body.split .lede { font-size: 14px; margin-bottom: 10px; }
+body.split .overlay p { margin: 6px 0; }
 @media (max-width: 480px) {
   .overlay .big { font-size: 38px; }
   .hello { margin-top: 8px; }

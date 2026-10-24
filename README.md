@@ -130,7 +130,12 @@ computers and iPads on their side get the picture with a controls sidebar.
 **iPad held upright**: the picture stays pinned along the top, and the
 controls scroll underneath in two columns (toolbar, source and style on the
 left, pinned under the picture when there's room; the tabs on the right), so
-the output is always in view. On touch screens faders and switches are
+the output is always in view. **iPhone Duo held upright** (unfolded tall, or
+half-folded like a laptop on a table): the picture fills the top half and the
+controls scroll in the bottom half, split at the fold. Where the browser reports
+the crease (the Viewport Segments API) the split follows it exactly; Safari
+doesn't report it yet, so the split goes by the screen's shape. Turn it off or
+on with ⋯ More → 📐 Split at the fold. On touch screens faders and switches are
 bigger, double-tap doesn't zoom, punch-in pads take several fingers at once,
 and key hints appear as soon as a keyboard (an iPad's) is used. Split View and
 Slide Over get the phone layout. MIDI isn't offered where the browser has no
