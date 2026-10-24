@@ -185,6 +185,9 @@ serve the files as-is.)
 2. Every glyph in the chosen set is pre-rendered once into a sprite atlas and
    measured for average color and ink density.
 3. Each frame, every cell picks a glyph (nearest color via a cached 15-bit RGB
-   lookup table, or brightness rank) and is blitted from the atlas.
+   lookup table, or brightness rank) and is blitted from the atlas. On a GPU
+   the cells are queued and drawn in a single WebGL call (instanced quads),
+   instead of one canvas draw per cell, which was the main cost at high detail.
+   Without hardware WebGL2 it falls back to one canvas draw per cell.
 4. Unicode modes draw white glyphs to a mask layer and tint the whole layer in
    one composite step, so full-color text costs about the same as mono.
