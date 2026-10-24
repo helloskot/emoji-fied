@@ -136,6 +136,16 @@ const ui = {
   invert: $('#invert'),
   blank: $('#blank'),
   tetris: $('#tetris'),
+  wordsOn: $('#wordsOn'),
+  words: $('#words'),
+  wordsMode: $('#wordsMode'),
+  wordsMotion: $('#wordsMotion'),
+  wordsColor: $('#wordsColor'),
+  wordsSize: $('#wordsSize'),
+  wordsSizeOut: $('#wordsSizeOut'),
+  wordsPos: $('#wordsPos'),
+  wordsOutline: $('#wordsOutline'),
+  wordsDot: $('#wordsDot'),
   blackout: $('#blackout'),
   liveDot: $('#liveDot'),
   outputRow: $('#outputRow'),
@@ -157,6 +167,7 @@ const ui = {
   moreMenu: $('#moreMenu'),
   snapsItem: $('#snapsItem'),
   keysItem: $('#keysItem'),
+  splitItem: $('#splitItem'),
   keysBtn: $('#keysBtn'),
   snapBadge: $('#snapBadge'),
   snapTray: $('#snapTray'),
@@ -521,7 +532,7 @@ const BAYER4 = [0, 8, 2, 10, 12, 4, 14, 6, 3, 11, 1, 9, 15, 7, 13, 5].map((v) =>
 // Draw the current frame (or the `crop` window of it) into a sample canvas,
 // one pixel per cell (2x4 for braille), and apply the adjustments in place.
 // Used for the live view and, at much higher detail, for posters.
-function sampleFrame(sc, sx, crop, fx, mirror, punched) {
+function sampleFrame(sc, sx, crop, fx, mirror, punched, words) {
   const sw = sc.width, sh = sc.height;
   sx.save();
   sx.imageSmoothingEnabled = true;
@@ -540,7 +551,144 @@ function sampleFrame(sc, sx, crop, fx, mirror, punched) {
   if (punched) punchPixels(img.data, sw, sh);
   // Written back so the full-colour tint pass sees the adjusted colours.
   sx.putImageData(img, 0, 0);
+  if (words && wordsActive()) {
+    // Words are painted into the sample like part of the picture, so the
+    // renderer draws them out of the current glyphs.
+    drawWords(sx, sw, sh);
+    return sx.getImageData(0, 0, sw, sh).data;
+  }
   return img.data;
+}
+
+// ---- Words ------------------------------------------------------------------
+// A message drawn into the picture: over it (with a dark outline so it
+// reads), on its own, or as a cut-out the picture shows through. Up to four
+// lines; still, scrolling, typed out, bouncing or pulsing on the beat.
+
+const WORDS_FONT = "'Bricolage Grotesque', ui-sans-serif, system-ui, sans-serif";
+const wordsActive = () => ui.wordsOn.checked && ui.words.value.trim() !== '';
+document.fonts?.load(`800 32px ${WORDS_FONT}`).catch(() => {});
+
+function drawWords(sx, sw, sh) {
+  const lines = ui.words.value.split('\n').map((l) => l.trim()).filter(Boolean).slice(0, 4);
+  if (!lines.length) return;
+  const t = performance.now() / 1000;
+  const motion = ui.wordsMotion.value, mode = ui.wordsMode.value;
+  // The lines fill this share of the height, unless that's too wide
+  // (scrolling text may run on).
+  let px = (sh * (+ui.wordsSize.value / 100)) / lines.length;
+  sx.save();
+  sx.font = `800 ${px}px ${WORDS_FONT}`;
+  let widest = Math.max(...lines.map((l) => sx.measureText(l).width));
+  if (motion !== 'scroll' && widest > sw * 0.94) {
+    px *= (sw * 0.94) / widest;
+    sx.font = `800 ${px}px ${WORDS_FONT}`;
+    widest = Math.max(...lines.map((l) => sx.measureText(l).width));
+  }
+  const blockH = px * lines.length;
+  const pos = ui.wordsPos.value;
+  const top = pos === 'top' ? sh * 0.05 : pos === 'bottom' ? sh * 0.95 - blockH : (sh - blockH) / 2;
+
+  if (motion === 'pulse') {
+    // Thump with the beat (a gentle breath when nothing's listening).
+    const listening = sound.analyser || midi.on || tempoOn();
+    const k = 1 + 0.3 * Math.min(1, sound.kick) + (listening ? 0 : 0.05 * Math.sin(t * 3));
+    const cx = sw / 2, cy = top + blockH / 2;
+    sx.translate(cx, cy);
+    sx.scale(k, k);
+    sx.translate(-cx, -cy);
+  }
+
+  // Where every character goes.
+  const total = lines.reduce((n, l) => n + [...l].length, 0);
+  let budget = motion === 'type' ? Math.min(total, Math.floor(t * 9) % (total + 14)) : Infinity;
+  const scrollX = sw - ((t * sw * 0.3) % (widest + sw));
+  const chars = [];
+  lines.forEach((line, li) => {
+    const glyphs = [...line];
+    const w = sx.measureText(line).width;
+    const x0 = motion === 'scroll' ? scrollX : (sw - w) / 2;
+    const y = top + px * (li + 0.55);
+    glyphs.forEach((ch, i) => {
+      if (budget-- <= 0) return;
+      const x = x0 + sx.measureText(glyphs.slice(0, i).join('')).width;
+      const bob = motion === 'bounce' ? Math.sin(t * 5 + chars.length * 0.6) * px * 0.12 : 0;
+      chars.push([ch, x, y + bob]);
+    });
+  });
+  sx.textBaseline = 'middle';
+  sx.textAlign = 'left';
+
+  let fill = ui.wordsColor.value;
+  if (fill === 'rainbow') {
+    const g = sx.createLinearGradient(0, 0, sw, 0);
+    const h0 = (t * 70) % 360;
+    for (let i = 0; i <= 6; i++) g.addColorStop(i / 6, `hsl(${(h0 + i * 60) % 360} 95% 62%)`);
+    fill = g;
+  }
+
+  if (mode === 'cutout') {
+    // Keep the picture only inside the letters; dark everywhere else. The
+    // letters go into a mask first: 'destination-in' cuts on every draw
+    // call, so drawing them one by one would leave only the last letter.
+    const mask = wordsMask(sw, sh);
+    const m = mask.getContext('2d');
+    m.setTransform(1, 0, 0, 1, 0, 0);
+    m.clearRect(0, 0, sw, sh);
+    m.setTransform(sx.getTransform());
+    m.font = sx.font;
+    m.textBaseline = 'middle';
+    m.textAlign = 'left';
+    m.fillStyle = '#fff';
+    for (const [ch, x, y] of chars) m.fillText(ch, x, y);
+    sx.setTransform(1, 0, 0, 1, 0, 0);
+    sx.globalCompositeOperation = 'destination-in';
+    sx.drawImage(mask, 0, 0);
+    sx.globalCompositeOperation = 'destination-over';
+    sx.fillStyle = BG;
+    sx.fillRect(0, 0, sw, sh);
+  } else {
+    // Unicode styles have one ink, so letters stand out only by how dense
+    // their characters are: dim the picture a little behind them.
+    if (mode === 'over' && state.kind !== 'emoji') {
+      sx.save();
+      sx.setTransform(1, 0, 0, 1, 0, 0);
+      sx.fillStyle = 'rgba(0, 0, 0, 0.55)';
+      sx.fillRect(0, 0, sw, sh);
+      sx.restore();
+    }
+    if (mode === 'only') {
+      sx.save();
+      sx.setTransform(1, 0, 0, 1, 0, 0);
+      sx.fillStyle = BG;
+      sx.fillRect(0, 0, sw, sh);
+      sx.restore();
+    } else if (ui.wordsOutline.checked) {
+      sx.lineJoin = 'round';
+      sx.lineWidth = Math.max(1, px * 0.16);
+      sx.strokeStyle = '#000';
+      for (const [ch, x, y] of chars) sx.strokeText(ch, x, y);
+    }
+    sx.fillStyle = fill;
+    for (const [ch, x, y] of chars) sx.fillText(ch, x, y);
+  }
+  sx.restore();
+}
+
+let wordsMaskCanvas = null;
+function wordsMask(w, h) {
+  if (!wordsMaskCanvas) wordsMaskCanvas = document.createElement('canvas');
+  if (wordsMaskCanvas.width !== w || wordsMaskCanvas.height !== h) {
+    wordsMaskCanvas.width = w;
+    wordsMaskCanvas.height = h;
+  }
+  return wordsMaskCanvas;
+}
+
+function syncWords() {
+  ui.wordsDot.hidden = !wordsActive();
+  ui.wordsSizeOut.textContent = `${ui.wordsSize.value}%`;
+  if (state.paused) render();
 }
 
 // Contrast, brightness, saturation, shadows/highlights, invert, plus the
@@ -600,7 +748,7 @@ function viewCrop() {
 }
 
 function grabFrame() {
-  return sampleFrame(sample, sctx, punchCrop(viewCrop()), state.fx, ui.mirror.checked, true);
+  return sampleFrame(sample, sctx, punchCrop(viewCrop()), state.fx, ui.mirror.checked, true, true);
 }
 
 function render() {
@@ -1715,7 +1863,7 @@ async function makePoster() {
     sc.width = cols * sub[0];
     sc.height = rows * sub[1];
     const sx = sc.getContext('2d', { willReadFrequently: true });
-    const d = sampleFrame(sc, sx, crop, null, ui.mirror.checked);
+    const d = sampleFrame(sc, sx, crop, null, ui.mirror.checked, false, true);
 
     const pc = document.createElement('canvas');
     pc.width = pw;
@@ -2136,6 +2284,7 @@ const between = (lo, hi) => lo + Math.random() * (hi - lo);
 // Pick a random look. Ranges are kept to values that look good and stay
 // fast on phones (detail is capped well below the slider's maximum).
 function randomize({ quiet = false, keepDetail = false } = {}) {
+  forgetTried();
   ui.random.classList.remove('spin');
   void ui.random.offsetWidth; // restart the animation
   ui.random.classList.add('spin');
@@ -2959,7 +3108,7 @@ function openOutput() {
     show.win.focus();
     return;
   }
-  const win = window.open('output.html?v=33', 'emojiFiedOutput', 'popup,width=960,height=540');
+  const win = window.open('output.html?v=36', 'emojiFiedOutput', 'popup,width=960,height=540');
   if (!win) {
     toast('Allow pop-ups for this site to open the output window');
     return;
@@ -3084,6 +3233,7 @@ function defaultScene() {
   const scene = {};
   for (const [k, el] of Object.entries(sceneFields())) {
     if (k === 'match') continue; // the default set picks its own
+    if (k === 'words') continue; // keep what you've typed
     scene[k] = el.type === 'checkbox' ? el.defaultChecked
       : el.tagName === 'SELECT' ? ([...el.options].find((o) => o.defaultSelected) || el.options[0]).value
       : el.defaultValue;
@@ -3091,8 +3241,16 @@ function defaultScene() {
   return scene;
 }
 
+// The look on screen is no longer the example that was tried.
+function forgetTried() {
+  if (!show.trying) return;
+  show.trying = null;
+  renderLooks();
+}
+
 function safeLook() {
   releasePunches(true);
+  forgetTried();
   applyScene(defaultScene());
   show.scene = 0;
   renderScenes();
@@ -3443,6 +3601,7 @@ const LEARN_RANGES = {
   shadows: ['Shadows', ui.shadows],
   highlights: ['Highlights', ui.highlights],
   fx: ['Effect strength', ui.fxStrength],
+  wordsSize: ['Words size', ui.wordsSize],
 };
 const LEARN_BUTTONS = {
   blackout: ['Blackout', () => toggleBlackout()],
@@ -3451,6 +3610,7 @@ const LEARN_BUTTONS = {
   tap: ['Tap tempo', () => tapTempo()],
   random: ['Randomize', () => randomize()],
   tetris: ['Tetris on/off', () => ui.tetris.click()],
+  words: ['Words on/off', () => ui.wordsOn.click()],
 };
 
 // What a learned id controls: { label, set(v) } for sliders, { label,
@@ -3582,6 +3742,7 @@ ui.safeBtn.dataset.learn = 'safe';
 ui.tapBtn.dataset.learn = 'tap';
 ui.random.dataset.learn = 'random';
 ui.tetris.closest('label').dataset.learn = 'tetris';
+ui.wordsOn.closest('label').dataset.learn = 'words';
 
 // While learning, a click picks the control instead of using it.
 for (const ev of ['pointerdown', 'mousedown', 'touchstart', 'click']) {
@@ -3619,6 +3780,8 @@ const sceneFields = () => ({
   invert: ui.invert, blank: ui.blank, tetris: ui.tetris,
   fxStrength: ui.fxStrength, beatShape: ui.beatShape, beatOutline: ui.beatOutline, beatShuffle: ui.beatShuffle,
   twinkle: ui.twinkle, kenBurns: ui.kenBurns,
+  wordsOn: ui.wordsOn, words: ui.words, wordsMode: ui.wordsMode, wordsMotion: ui.wordsMotion,
+  wordsColor: ui.wordsColor, wordsSize: ui.wordsSize, wordsPos: ui.wordsPos, wordsOutline: ui.wordsOutline,
 });
 
 function describeLook() {
@@ -3627,6 +3790,7 @@ function describeLook() {
   if (state.kind !== 'emoji') bits.push(ui.ink.selectedOptions[0]?.textContent);
   if (ui.invert.checked) bits.push('inverted');
   if (ui.tetris.checked) bits.push('🧱');
+  if (wordsActive()) bits.push(`💬 ${ui.words.value.trim().split('\n')[0].slice(0, 10)}`);
   return bits.join(' · ');
 }
 
@@ -3646,6 +3810,8 @@ function sceneThumb() {
 
 function captureScene() {
   const scene = { label: describeLook(), thumb: sceneThumb() };
+  const ex = show.trying;
+  if (ex) Object.assign(scene, { label: ex.label, icon: ex.icon, tint: ex.tint, example: ex.id });
   for (const [k, el] of Object.entries(sceneFields())) scene[k] = el.type === 'checkbox' ? el.checked : el.value;
   if (punch.crunchCols) scene.cols = String(punch.crunchCols); // the detail without Crunch held
   return scene;
@@ -3662,6 +3828,7 @@ function applyScene(scene) {
   applyStyle(); // also picks the set's own "Match by"...
   if (scene.match && state.kind === 'emoji') ui.match.value = scene.match; // ...unless saved
   syncLabels();
+  syncWords();
   onBeatShapeChange();
   if (ui.tetris.checked !== tetrisWas) tetris.plan = null;
   if (state.paused) render();
@@ -3670,16 +3837,48 @@ function applyScene(scene) {
 // Example scenes: a starter set for the slots. Each is the default look
 // with a few changes; it gets a real thumbnail the first time it plays.
 const EXAMPLE_SCENES = [
-  { id: 'candy', icon: '🌈', label: 'Candy Pop', tint: '#ff6fae', look: { style: 'emoji:rainbow', cols: '56', sat: '1.7', contrast: '1.35', beatShape: 'mix' } },
-  { id: 'matrix', icon: '💚', label: 'Matrix', tint: '#39ff7a', look: { style: 'text:katakana', ink: '#39ff7a', cols: '96', contrast: '1.7', bright: '0.04' } },
-  { id: 'love', icon: '💖', label: 'Love Bomb', tint: '#ff4f7b', look: { style: 'emoji:hearts', cols: '44', sat: '1.5', contrast: '1.3', beatShape: 'heart' } },
-  { id: 'skulls', icon: '💀', label: 'Skull Rave', tint: '#c38bff', look: { style: 'skull', ink: '#ff4fd8', cols: '72', contrast: '1.6', beatShape: 'star' } },
-  { id: 'tetris', icon: '🧱', label: 'Tetris Party', tint: '#ffd23f', look: { style: 'emoji:everything', cols: '40', sat: '1.3', tetris: true } },
-  { id: 'ghost', icon: '👻', label: 'Braille Ghost', tint: '#e9e3d6', look: { style: 'braille', ink: '#f2f2f2', cols: '130', contrast: '1.9', shadows: '-0.2' } },
-  { id: 'amber', icon: '📟', label: 'Amber Terminal', tint: '#ffb000', look: { style: 'text:detailed', ink: '#ffb000', cols: '120', contrast: '1.5' } },
-  { id: 'snack', icon: '🍩', label: 'Snack Attack', tint: '#ff9a3d', look: { style: 'emoji:food', cols: '52', sat: '1.4', highlights: '0.1' } },
-  { id: 'chaos', icon: '🌀', label: 'Chaos Mode', tint: '#5cb8ff', look: { style: 'emoji:faces', cols: '60', sat: '1.6', beatShape: 'mix', beatShuffle: '4' } },
+  // The starter set: the nine slots on a first visit (and ✨ Examples).
+  { id: 'candy', starter: true, group: 'Emoji', icon: '🌈', label: 'Candy Pop', tint: '#ff6fae', look: { style: 'emoji:rainbow', cols: '56', sat: '1.7', contrast: '1.35', beatShape: 'mix' } },
+  { id: 'matrix', starter: true, group: 'Text & code', icon: '💚', label: 'Matrix', tint: '#39ff7a', look: { style: 'text:katakana', ink: '#39ff7a', cols: '96', contrast: '1.7', bright: '0.04' } },
+  { id: 'love', starter: true, group: 'Emoji', icon: '💖', label: 'Love Bomb', tint: '#ff4f7b', look: { style: 'emoji:hearts', cols: '44', sat: '1.5', contrast: '1.3', beatShape: 'heart' } },
+  { id: 'skulls', starter: true, group: 'Party', icon: '💀', label: 'Skull Rave', tint: '#c38bff', look: { style: 'skull', ink: '#ff4fd8', cols: '72', contrast: '1.6', beatShape: 'star' } },
+  { id: 'tetris', starter: true, group: 'Party', icon: '🧱', label: 'Tetris Party', tint: '#ffd23f', look: { style: 'emoji:everything', cols: '40', sat: '1.3', tetris: true } },
+  { id: 'ghost', starter: true, group: 'Fine detail', icon: '👻', label: 'Braille Ghost', tint: '#e9e3d6', look: { style: 'braille', ink: '#f2f2f2', cols: '130', contrast: '1.9', shadows: '-0.2' } },
+  { id: 'amber', starter: true, group: 'Text & code', icon: '📟', label: 'Amber Terminal', tint: '#ffb000', look: { style: 'text:detailed', ink: '#ffb000', cols: '120', contrast: '1.5' } },
+  { id: 'snack', starter: true, group: 'Emoji', icon: '🍩', label: 'Snack Attack', tint: '#ff9a3d', look: { style: 'emoji:food', cols: '52', sat: '1.4', highlights: '0.1' } },
+  { id: 'chaos', starter: true, group: 'Party', icon: '🌀', label: 'Chaos Mode', tint: '#5cb8ff', look: { style: 'emoji:faces', cols: '60', sat: '1.6', beatShape: 'mix', beatShuffle: '4' } },
+  // The rest of the library (🎨 Look → Try a look).
+  { id: 'zoo', group: 'Emoji', icon: '🐾', label: 'Zoo', tint: '#ffb000', look: { style: 'emoji:animals', cols: '50', sat: '1.3' } },
+  { id: 'forest', group: 'Emoji', icon: '🌿', label: 'Forest', tint: '#43d17a', look: { style: 'emoji:nature', cols: '64', sat: '1.25', contrast: '1.3' } },
+  { id: 'faces', group: 'Emoji', icon: '🤡', label: 'Face Wall', tint: '#ffd23f', look: { style: 'emoji:faces', cols: '36', sat: '1.3' } },
+  { id: 'frog', group: 'Emoji', icon: '🐸', label: 'Frog Pond', tint: '#6fe3a5', look: { style: 'custom', custom: '🐸🍀💚🌿🟩', cols: '60', sat: '1.4' } },
+  { id: 'sea', group: 'Emoji', icon: '🌊', label: 'Deep Sea', tint: '#3d8bff', look: { style: 'custom', custom: '🌊🐟🐠🐳💧💙', cols: '64', contrast: '1.3' } },
+  { id: 'inferno', group: 'Emoji', icon: '🔥', label: 'Inferno', tint: '#ff6a3d', look: { style: 'custom', custom: '🔥🧡❤️💛🌋', cols: '56', contrast: '1.5', sat: '1.5', beatShape: 'sweep' } },
+  { id: 'sakura', group: 'Emoji', icon: '🌸', label: 'Sakura', tint: '#ffb3d1', look: { style: 'custom', custom: '🌸🌷💮🎀💗', cols: '60', bright: '0.05', sat: '1.2' } },
+  { id: 'galaxy', group: 'Emoji', icon: '🪐', label: 'Galaxy', tint: '#8f7bff', look: { style: 'custom', custom: '✨⭐🌟💫🌌🪐', cols: '72', contrast: '1.6' } },
+  { id: 'sweet', group: 'Emoji', icon: '🍭', label: 'Sweet Tooth', tint: '#ff9ad1', look: { style: 'custom', custom: '🍬🍭🍩🧁🍰🍫', cols: '56', sat: '1.3' } },
+  { id: 'sun', group: 'Emoji', icon: '🌻', label: 'Sunburst', tint: '#ffd23f', look: { style: 'custom', custom: '🌞☀️🌻🟡🌼', cols: '52', bright: '0.05' } },
+  { id: 'snow', group: 'Emoji', icon: '❄️', label: 'Snow Day', tint: '#cfe9ff', look: { style: 'custom', custom: '❄️⛄🤍💙🧊', cols: '64', contrast: '1.3' } },
+  { id: 'arcade', group: 'Emoji', icon: '👾', label: 'Arcade', tint: '#5cb8ff', look: { style: 'custom', custom: '👾🕹️🟦🟥🟨🟩', cols: '40', contrast: '1.5' } },
+  { id: 'monitor', group: 'Text & code', icon: '💾', label: 'Old Monitor', tint: '#39ff7a', look: { style: 'text:ascii', ink: '#39ff7a', cols: '80', contrast: '1.5', bright: '0.1' } },
+  { id: 'ice', group: 'Text & code', icon: '🧊', label: 'Ice Blocks', tint: '#5ec8ff', look: { style: 'text:blocks', ink: '#5ec8ff', cols: '90', contrast: '1.6' } },
+  { id: 'stars', group: 'Text & code', icon: '⭐', label: 'Starfield', tint: '#e9e3d6', look: { style: 'text:stars', ink: '#f2f2f2', cols: '100', contrast: '1.6', bright: '0.12' } },
+  { id: 'halftone', group: 'Text & code', icon: '🔵', label: 'Halftone', tint: '#ff9a3d', look: { style: 'text:shapes', cols: '80', contrast: '1.4', sat: '1.5' } },
+  { id: 'math', group: 'Text & code', icon: '🧮', label: 'Math Class', tint: '#c38bff', look: { style: 'text:math', ink: '#f2f2f2', cols: '96', contrast: '1.5', bright: '0.08' } },
+  { id: 'noir', group: 'Text & code', icon: '🖤', label: 'Noir', tint: '#9a968c', look: { style: 'text:detailed', ink: '#f2f2f2', cols: '120', sat: '0', contrast: '1.9', shadows: '-0.3' } },
+  { id: 'vapor', group: 'Text & code', icon: '💜', label: 'Vapor', tint: '#ff4fd8', look: { style: 'text:katakana', ink: '#ff4fd8', cols: '80', contrast: '1.8', bright: '0.12', beatShape: 'hexagon' } },
+  { id: 'news', group: 'Fine detail', icon: '📰', label: 'Newsprint', tint: '#e9e3d6', look: { style: 'braille', ink: '#f2f2f2', cols: '170', contrast: '1.6' } },
+  { id: 'xray', group: 'Fine detail', icon: '🩻', label: 'X-Ray', tint: '#5ec8ff', look: { style: 'braille', ink: '#5ec8ff', cols: '120', contrast: '1.8', invert: true } },
+  { id: 'hypno', group: 'Party', icon: '😵‍💫', label: 'Hypno', tint: '#ff6fae', look: { style: 'emoji:rainbow', cols: '48', sat: '1.8', beatShape: 'circle' } },
+  { id: 'party', group: 'Party', icon: '🎉', label: 'Party Starter', tint: '#ffd23f', look: { style: 'emoji:everything', cols: '56', sat: '1.4', beatShape: 'mix', beatShuffle: '8' } },
+  { id: 'bricks', group: 'Party', icon: '🌈', label: 'Rainbow Bricks', tint: '#ff6f91', look: { style: 'emoji:rainbow', cols: '36', tetris: true } },
+  { id: 'hello', group: 'Words', icon: '💬', label: 'Say Hello', tint: '#c38bff', look: { style: 'emoji:everything', cols: '64', wordsOn: true, words: 'HELLO 👋', wordsColor: '#ffd23f', wordsMotion: 'bounce', wordsSize: '50' } },
+  { id: 'drop', group: 'Words', icon: '📣', label: 'Drop It', tint: '#ff6f91', look: { style: 'emoji:rainbow', cols: '56', sat: '1.5', wordsOn: true, words: 'DROP IT', wordsColor: 'rainbow', wordsMotion: 'pulse', wordsSize: '60', beatShape: 'mix' } },
+  { id: 'marquee', group: 'Words', icon: '🎞️', label: 'Marquee', tint: '#ffb000', look: { style: 'text:detailed', ink: '#ffb000', cols: '110', contrast: '1.5', bright: '0.06', wordsOn: true, words: 'NOW PLAYING ✦ EMOJI·FIED', wordsMotion: 'scroll', wordsSize: '34', wordsPos: 'bottom' } },
+  { id: 'cut', group: 'Words', icon: '✂️', label: 'Cut-out', tint: '#6fe3a5', look: { style: 'emoji:nature', cols: '72', sat: '1.3', wordsOn: true, words: 'WILD', wordsMode: 'cutout', wordsSize: '85', wordsOutline: false } },
 ];
+const STARTER_SCENES = EXAMPLE_SCENES.filter((ex) => ex.starter);
+const EXAMPLE_GROUPS = ['Emoji', 'Words', 'Text & code', 'Fine detail', 'Party'];
 
 function exampleScene(ex) {
   return { ...defaultScene(), ...ex.look, label: ex.label, icon: ex.icon, tint: ex.tint, example: ex.id };
@@ -3695,16 +3894,71 @@ function loadScenes() {
   }
   // First visit: start with the examples.
   if (saved === null) {
-    EXAMPLE_SCENES.forEach((ex, i) => (show.scenes[i + 1] = exampleScene(ex)));
+    STARTER_SCENES.forEach((ex, i) => (show.scenes[i + 1] = exampleScene(ex)));
     storeScenes(true);
   }
+}
+
+// ---- Try a look: the example library on the Look tab ---------------------------
+// Tap a card to try the look live; saving it to a slot (🎬 Live) keeps its
+// name and emoji.
+
+function tryExample(ex) {
+  applyScene(exampleScene(ex));
+  show.trying = ex;
+  show.scene = 0;
+  renderScenes();
+  renderLooks();
+  liveToast(`✨ ${ex.icon} ${ex.label}`);
+  dbg(`example tried: ${ex.id}`);
+}
+
+function renderLooks() {
+  const box = document.getElementById('looks');
+  box.replaceChildren(
+    ...EXAMPLE_GROUPS.map((group) => {
+      const wrap = document.createElement('div');
+      wrap.className = 'look-group';
+      const title = document.createElement('span');
+      title.className = 'look-group-title';
+      title.textContent = group;
+      const strip = document.createElement('div');
+      strip.className = 'look-strip';
+      for (const ex of EXAMPLE_SCENES.filter((e) => e.group === group)) {
+        const b = document.createElement('button');
+        b.type = 'button';
+        b.className = `look-card${show.trying === ex ? ' on' : ''}`;
+        b.style.setProperty('--tint', ex.tint);
+        b.title = `Try ${ex.label}`;
+        const ico = document.createElement('span');
+        ico.className = 'ico';
+        ico.textContent = ex.icon;
+        const name = document.createElement('span');
+        name.className = 'name';
+        name.textContent = ex.label;
+        b.append(ico, name);
+        b.addEventListener('click', () => tryExample(ex));
+        strip.append(b);
+      }
+      // A mouse wheel scrolls the strip sideways.
+      strip.addEventListener('wheel', (e) => {
+        if (Math.abs(e.deltaY) <= Math.abs(e.deltaX) || strip.scrollWidth <= strip.clientWidth) return;
+        const max = strip.scrollWidth - strip.clientWidth;
+        if ((e.deltaY < 0 && strip.scrollLeft <= 0) || (e.deltaY > 0 && strip.scrollLeft >= max)) return; // let the page scroll on
+        e.preventDefault();
+        strip.scrollLeft += e.deltaY;
+      }, { passive: false });
+      wrap.append(title, strip);
+      return wrap;
+    })
+  );
 }
 
 // Put the examples into the empty slots (or, with none empty, offer to
 // swap every slot for them).
 function loadExamples() {
   const have = new Set(Object.values(show.scenes).map((sc) => sc.example).filter(Boolean));
-  const todo = EXAMPLE_SCENES.filter((ex) => !have.has(ex.id));
+  const todo = STARTER_SCENES.filter((ex) => !have.has(ex.id));
   const empty = Array.from({ length: 9 }, (_, i) => i + 1).filter((n) => !show.scenes[n]);
   if (!todo.length && !empty.length) {
     toast('All the examples are already in your slots');
@@ -3713,9 +3967,9 @@ function loadExamples() {
   if (!empty.length) {
     if (!confirm('Every slot is full. Replace all nine scenes with the examples?')) return;
     show.scenes = {};
-    EXAMPLE_SCENES.forEach((ex, i) => (show.scenes[i + 1] = exampleScene(ex)));
+    STARTER_SCENES.forEach((ex, i) => (show.scenes[i + 1] = exampleScene(ex)));
   } else {
-    (todo.length ? todo : EXAMPLE_SCENES).slice(0, empty.length).forEach((ex, i) => (show.scenes[empty[i]] = exampleScene(ex)));
+    (todo.length ? todo : STARTER_SCENES).slice(0, empty.length).forEach((ex, i) => (show.scenes[empty[i]] = exampleScene(ex)));
   }
   storeScenes();
   renderScenes();
@@ -3732,6 +3986,7 @@ function storeScenes(quiet = false) {
 
 function recallScene(n) {
   const scene = show.scenes[n];
+  if (scene) forgetTried();
   if (!scene) {
     liveToast(`Scene ${n} is empty: Shift + ${n} saves the current look there`);
     return;
@@ -3826,12 +4081,67 @@ ui.sceneSave.addEventListener('click', () => setSaving(!show.saving));
 document.getElementById('examplesBtn').addEventListener('click', loadExamples);
 loadScenes();
 renderScenes();
+renderLooks();
 buildPunchButtons();
 window.addEventListener('blur', () => releasePunches());
 
 // Tablets held upright pin the picture along the top; the main controls
 // column pins under it as well, but only if it fits below the picture.
 const ctlMain = document.querySelector('.ctl-main');
+// ---- Split at the fold ----------------------------------------------------------
+// An iPhone Duo held upright and unfolded has its crease across the middle:
+// half-fold it like a laptop (tabletop) and the top half stands up. So the
+// picture takes the top half and the controls the bottom half. Where the
+// browser reports the fold (the Viewport Segments API: Safari 27.1 behind a
+// flag, Chrome on Android foldables), the split follows the real crease;
+// otherwise a narrow-tablet, touch-only, upright screen (the Duo's inner
+// screen is about 669 x 825) splits at its middle. ⋯ More turns it off.
+const FOLD_SHAPE = '(orientation: portrait) and (pointer: coarse) and (min-width: 600px) and (max-width: 699px) and (min-height: 700px)';
+let splitOff = false;
+try { splitOff = localStorage.getItem('emojiFiedSplit') === 'off'; } catch {}
+
+function creaseFromSegments() {
+  const segs = window.viewport?.segments;
+  if (!segs || segs.length !== 2) return null;
+  const [a, b] = [...segs].sort((p, q) => p.top - q.top);
+  // Stacked one above the other: a crease across the screen.
+  if (b.top >= a.bottom - 1 && Math.abs(a.width - b.width) < 2) return [a.bottom, b.top];
+  return null;
+}
+
+function fitFold() {
+  const seg = creaseFromSegments();
+  const shaped = matchMedia(FOLD_SHAPE).matches;
+  ui.splitItem.hidden = !seg && !shaped;
+  ui.splitItem.setAttribute('aria-checked', String(!splitOff));
+  ui.splitItem.textContent = `📐 Split at the fold: ${splitOff ? 'off' : 'on'}`;
+  let crease = null;
+  if (!splitOff) crease = seg || (shaped ? [innerHeight / 2 - 6, innerHeight / 2 + 6] : null);
+  document.body.classList.toggle('split', !!crease);
+  if (crease) {
+    document.body.style.setProperty('--crease-top', `${Math.round(crease[0])}px`);
+    document.body.style.setProperty('--crease-bottom', `${Math.round(crease[1])}px`);
+  }
+}
+
+// Folding fires a few resizes on the way (sizes that match no pose), so
+// wait for it to settle.
+let foldTimer = 0;
+const fitFoldSoon = () => {
+  clearTimeout(foldTimer);
+  foldTimer = setTimeout(fitFold, 150);
+};
+addEventListener('resize', fitFoldSoon);
+window.viewport?.addEventListener?.('resize', fitFoldSoon);
+navigator.devicePosture?.addEventListener?.('change', fitFoldSoon);
+ui.splitItem.addEventListener('click', () => {
+  splitOff = !splitOff;
+  try { localStorage.setItem('emojiFiedSplit', splitOff ? 'off' : 'on'); } catch {}
+  closeMenu();
+  fitFold();
+});
+fitFold();
+
 function fitTabletLayout() {
   const upright = matchMedia('(min-width: 700px) and (orientation: portrait)').matches;
   const stageH = ui.stage.getBoundingClientRect().height;
@@ -3925,7 +4235,10 @@ ui.start.addEventListener('click', () => {
   dbg('start button click handler, onclick set=' + !!ui.start.onclick);
   if (!ui.start.onclick) useCamera();
 });
-ui.style.addEventListener('change', applyStyle);
+ui.style.addEventListener('change', () => {
+  forgetTried();
+  applyStyle();
+});
 ui.custom.addEventListener('input', () => {
   clearTimeout(ui.custom._t);
   ui.custom._t = setTimeout(applyStyle, 250);
@@ -4063,6 +4376,18 @@ ui.keysClose.addEventListener('click', () => toggleKeys(false));
 syncSnaps();
 ui.random.addEventListener('click', () => randomize());
 ui.mic.addEventListener('change', onSoundModeChange);
+for (const el of [ui.wordsOn, ui.words, ui.wordsMode, ui.wordsMotion, ui.wordsColor, ui.wordsSize, ui.wordsPos, ui.wordsOutline]) {
+  el.addEventListener('input', syncWords);
+  el.addEventListener('change', syncWords);
+}
+ui.wordsOn.addEventListener('change', () => {
+  // Turning words on with nothing typed: a nudge to the Words tab.
+  if (ui.wordsOn.checked && !ui.words.value.trim()) {
+    setTab('words');
+    ui.words.focus();
+  }
+});
+syncWords();
 ui.mic.checked = false; // starts off, even if the browser restored the box
 ui.midi.addEventListener('change', () => (ui.midi.checked ? enableMidi() : disableMidi()));
 ui.midi.checked = false; // MIDI starts off, even if the browser restored the box
@@ -4103,7 +4428,7 @@ window.addEventListener('blur', () => motion.keys.clear());
 
 // Shortcuts; also called by the output window for keys pressed there.
 function onKey(e) {
-  if (e.target?.matches?.('input[type="text"], select')) return;
+  if (e.target?.matches?.('input[type="text"], textarea, select')) return;
   if (e.metaKey || e.ctrlKey || e.altKey) return; // leave the browser's own shortcuts alone
   // Number row or keypad: 1-9 scenes (Shift saves), 0 the safe look.
   const digit = /^(?:Digit|Numpad)(\d)$/.exec(e.code || '')?.[1];
@@ -4131,6 +4456,7 @@ function onKey(e) {
   if (e.key === 'p') snapshot({ quiet: true });
   if (e.key === 'd') randomize();
   if (e.key === 't') ui.tetris.click();
+  if (e.key === 'm') ui.wordsOn.click();
   if (e.key === '?') toggleKeys();
   if (e.key === 'Escape' && !ui.moreMenu.hidden) closeMenu();
   else if (e.key === 'Escape' && !ui.keysSheet.hidden) toggleKeys(false);
@@ -4155,5 +4481,5 @@ try {
 } catch (err) {
   ui.error.textContent = `Setup failed: ${err.message}`;
 }
-window.emojiFiedReady = '33';
-dbg('app.js v33 initialised');
+window.emojiFiedReady = '36';
+dbg('app.js v36 initialised');

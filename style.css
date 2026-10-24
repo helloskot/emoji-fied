@@ -41,6 +41,7 @@
   --c-beat: #5cb8ff;
   --c-live: #ff6f91;
   --c-photo: #6fe3a5;
+  --c-words: #c38bff;
   --tab: var(--c-look);
   --tab-ink: #1d1600;
   --r-lg: 18px;
@@ -236,6 +237,37 @@ main {
 
 /* Full screen. Native and iPhone "immersive" modes share the same look;
    kept as separate rules because an unknown selector drops a whole list. */
+/* Split at the fold (an iPhone Duo held upright, ready for tabletop): the
+   picture fills the top half, above the crease, and the controls scroll in
+   the bottom half. app.js finds the crease (--crease-top/-bottom): exactly,
+   where the browser reports the fold, otherwise the middle of the screen.
+   A band of background over the top half hides controls scrolling under. */
+body.split header { display: none; }
+body.split main {
+  grid-template-columns: minmax(0, 1fr);
+  padding-top: calc(var(--crease-bottom, 50vh) + 10px);
+}
+body.split::before {
+  content: '';
+  position: fixed;
+  inset: 0 0 auto;
+  height: var(--crease-top, 50vh);
+  background: var(--bg);
+  box-shadow: 0 8px 16px var(--bg);
+  z-index: 9;
+}
+body.split:not(.immersive) .stage:not(:fullscreen) {
+  position: fixed;
+  z-index: 10;
+  top: max(8px, env(safe-area-inset-top));
+  left: 50%;
+  transform: translateX(-50%);
+  width: auto;
+  height: calc(var(--crease-top, 50vh) - max(8px, env(safe-area-inset-top)) - 8px);
+  max-height: none;
+  max-width: calc(100vw - 24px);
+}
+
 body.immersive { overflow: hidden; }
 body.immersive .stage {
   max-height: none;
@@ -378,6 +410,13 @@ body.immersive .stage {
 
 /* Before anything starts, give the start screen room on phones. */
 .stage:has(> .overlay:not([hidden])) { min-height: min(440px, calc(100svh - 150px)); }
+/* Split at the fold: the start screen keeps to the top half too. */
+body.split .stage:has(> .overlay:not([hidden])) { min-height: 0; width: calc(100vw - 24px); }
+body.split .overlay { padding: 10px; overflow: auto; }
+body.split .overlay .big { font-size: 34px; }
+body.split .hello { margin-top: 6px; }
+body.split .lede { font-size: 14px; margin-bottom: 10px; }
+body.split .overlay p { margin: 6px 0; }
 @media (max-width: 480px) {
   .overlay .big { font-size: 38px; }
   .hello { margin-top: 8px; }
@@ -410,6 +449,7 @@ body.immersive .stage {
 .controls[data-tab="beat"] { --tab: var(--c-beat); --tab-ink: #001b2e; }
 .controls[data-tab="live"] { --tab: var(--c-live); --tab-ink: #2b0010; }
 .controls[data-tab="photo"] { --tab: var(--c-photo); --tab-ink: #002412; }
+.controls[data-tab="words"] { --tab: var(--c-words); --tab-ink: #1c0030; }
 
 .field { display: grid; gap: 6px; }
 .field[hidden] { display: none; }
@@ -509,7 +549,7 @@ kbd {
 
 /* ---- Inputs ------------------------------------------------------------------ */
 
-select, input[type="text"] {
+select, input[type="text"], textarea {
   width: 100%;
   background: var(--panel-2);
   color: var(--text);
@@ -530,6 +570,19 @@ select {
 }
 select:focus-visible, input[type="text"]:focus-visible { outline: 2px solid var(--tab); outline-offset: 1px; }
 input[type="text"] { font-size: 18px; }
+textarea {
+  resize: vertical;
+  min-height: 64px;
+  font: 800 20px/1.2 var(--font);
+  letter-spacing: -0.01em;
+}
+textarea:focus-visible { outline: 2px solid var(--tab); outline-offset: 1px; }
+.words-dot { background: var(--c-words); box-shadow: 0 0 6px var(--c-words); }
+/* Tab labels stay on one line; with all five tabs showing (a photo is
+   loaded), the emoji step aside to make room. */
+.tabs button { white-space: nowrap; }
+.tabs:has(> #photoTab:not([hidden])) .tab-ico { display: none; }
+@media (max-width: 480px) { .tabs button { font-size: 13px; padding: 8px 2px; } }
 
 /* Faders: a slim track filled with the tab's colour (--p is set from the
    value) and a chunky cap with a groove. */
@@ -969,6 +1022,43 @@ input[type="range"]:focus-visible::-webkit-slider-thumb { box-shadow: 0 0 0 2px 
 .scene .ico { position: absolute; top: 5px; right: 7px; font-size: 19px; line-height: 1; }
 .scene.has-thumb .ico { font-size: 15px; opacity: 0.9; }
 .sec-actions { display: inline-flex; gap: 14px; }
+
+/* Try a look: rows of example cards that scroll sideways. */
+.looks { display: grid; gap: 8px; }
+.look-group { display: grid; gap: 5px; min-width: 0; }
+.look-group-title { font: 500 10px var(--mono); letter-spacing: 0.1em; text-transform: uppercase; color: var(--faint); }
+.look-strip {
+  display: grid;
+  grid-auto-flow: column;
+  grid-auto-columns: 84px;
+  gap: 6px;
+  overflow-x: auto;
+  scroll-snap-type: x proximity;
+  padding: 2px 2px 8px;
+  margin: 0 -2px;
+  scrollbar-width: thin;
+  scrollbar-color: var(--line-2) transparent;
+  -webkit-mask-image: linear-gradient(90deg, #000 88%, transparent);
+  mask-image: linear-gradient(90deg, #000 88%, transparent);
+}
+.look-strip::-webkit-scrollbar { height: 4px; }
+.look-strip::-webkit-scrollbar-thumb { background: var(--line-2); border-radius: 4px; }
+.look-card {
+  scroll-snap-align: start;
+  display: grid;
+  justify-items: start;
+  align-content: space-between;
+  gap: 4px;
+  height: 66px;
+  padding: 7px 8px;
+  text-align: left;
+  background:
+    radial-gradient(130% 110% at 100% 0%, color-mix(in srgb, var(--tint) 45%, transparent), transparent 64%),
+    linear-gradient(180deg, var(--key-hi), var(--key));
+}
+.look-card .ico { font-size: 20px; line-height: 1; }
+.look-card .name { font-size: 11.5px; font-weight: 600; line-height: 1.15; }
+.look-card.on { border-color: var(--tint); box-shadow: var(--lip), 0 0 0 1px var(--tint), 0 0 14px color-mix(in srgb, var(--tint) 50%, transparent); }
 .scene.empty .what { color: var(--faint); }
 .scene.current { border-color: var(--tab); box-shadow: var(--lip), 0 0 0 1px var(--tab), 0 0 14px rgba(255, 111, 145, 0.35); }
 .scenes.saving .scene { border-style: dashed; border-color: var(--tab); }

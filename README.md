@@ -52,9 +52,20 @@ the stream. Sharing the tab gets the same result.
 A toolbar (⏺ Record · 📸 Photo · ⏸ Pause · ⛶ Full · 📺 TV · ⋯ More), the
 source, style (🎲 randomizes it) and detail, then four tabs:
 
-- **🎨 Look**: match by colour or brightness (or the ink colour for unicode),
+- **🎨 Look**: **Try a look**, a library of 37 example looks in five rows
+  that scroll sideways (Emoji, Words, Text & code, Fine detail, Party): tap one to
+  try it live, then save it to a scene slot (🎬 Live) to keep it, name and
+  emoji included. Then match by colour or brightness (or the ink colour for unicode),
   adjustments (contrast, brightness, saturation, shadows, highlights, with
   reset), mirror, invert, blank darks and **🧱 Tetris build**.
+- **🔤 Words**: type a message (up to four lines) and it's drawn into the
+  picture out of the current emoji or characters, so it changes with the
+  style: **over the picture** (with a dark outline so it reads), **words
+  only**, or as a **cut-out** the picture shows through. Motion: still,
+  scrolling marquee, typewriter, bounce, or pulse on the beat; colour (white,
+  sunflower, bubblegum, sky, mint, an animated 🌈 rainbow), size and
+  position. `M` shows or hides them. Scenes remember them, posters, the output
+  window and recordings include them, and the toggle is MIDI-learnable.
 - **🎵 Beat**: what drives the effects, and what a beat does.
   - *Listen to* **🎤 Sound** (the microphone, or a video's or shared tab's own
     audio, with a sensitivity slider), **🎹 MIDI** (Chrome, Edge or Firefox on
@@ -92,7 +103,8 @@ source, style (🎲 randomizes it) and detail, then four tabs:
     (🌈 Candy Pop, 💚 Matrix, 💖 Love Bomb, 💀 Skull Rave, 🧱 Tetris Party,
     👻 Braille Ghost, 📟 Amber Terminal, 🍩 Snack Attack, 🌀 Chaos Mode),
     shown as colour cards until they've played once; **✨ Examples** puts them
-    back into empty slots without touching your own.
+    back into empty slots without touching your own. 24 more are in 🎨 Look →
+    Try a look.
   - **MIDI controller** (MIDI learn): click *Learn…*, a slider or button
     (scenes, panic, punch-ins, Tap, 🎲, Tetris), then move a knob or hit a
     pad. Punch-ins last as long as the pad is held; mapped notes don't also
@@ -118,7 +130,12 @@ computers and iPads on their side get the picture with a controls sidebar.
 **iPad held upright**: the picture stays pinned along the top, and the
 controls scroll underneath in two columns (toolbar, source and style on the
 left, pinned under the picture when there's room; the tabs on the right), so
-the output is always in view. On touch screens faders and switches are
+the output is always in view. **iPhone Duo held upright** (unfolded tall, or
+half-folded like a laptop on a table): the picture fills the top half and the
+controls scroll in the bottom half, split at the fold. Where the browser reports
+the crease (the Viewport Segments API) the split follows it exactly; Safari
+doesn't report it yet, so the split goes by the screen's shape. Turn it off or
+on with ⋯ More → 📐 Split at the fold. On touch screens faders and switches are
 bigger, double-tap doesn't zoom, punch-in pads take several fingers at once,
 and key hints appear as soon as a keyboard (an iPad's) is used. Split View and
 Slide Over get the phone layout. MIDI isn't offered where the browser has no
