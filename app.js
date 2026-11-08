@@ -150,6 +150,7 @@ const ui = {
   tuneStopBtn: $('#tuneStopBtn'),
   tuneGrid: $('#tuneGrid'),
   tuneFps: $('#tuneFps'),
+  tuneMode: $('#tuneMode'),
   tuneFpsOut: $('#tuneFpsOut'),
   tuneBright: $('#tuneBright'),
   tuneBrightOut: $('#tuneBrightOut'),
@@ -3392,7 +3393,7 @@ function openOutput() {
     show.win.focus();
     return;
   }
-  const win = window.open('output.html?v=39', 'emojiFiedOutput', 'popup,width=960,height=540');
+  const win = window.open('output.html?v=40', 'emojiFiedOutput', 'popup,width=960,height=540');
   if (!win) {
     toast('Allow pop-ups for this site to open the output window');
     return;
@@ -3721,46 +3722,100 @@ function tuneUpload(blob) {
   return tuneFetch('/image', { method: 'POST', body: fd });
 }
 
-async function tuneLiveLoop() {
-  while (tune.live) {
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+const TUNE_CLIP_S = 0.5; // Smooth mode: how much each clip holds
+
+// Count what reached the Tuneshine; once a second, say how fast frames are
+// getting there and how long each send takes (the round trip is usually
+// what limits Instant mode).
+function tuneDelivered(frames, ms) {
+  tune.fails = 0;
+  tune.sent += frames;
+  tune.sends++;
+  tune.sendMs += ms;
+  const now = performance.now();
+  if (!tune.rateAt) Object.assign(tune, { rateAt: now, rateSent: tune.sent, sends: 0, sendMs: 0 });
+  else if (now - tune.rateAt >= 1000) {
+    const fps = ((tune.sent - tune.rateSent) * 1000) / (now - tune.rateAt);
+    tuneStatus(`Live · ${fps.toFixed(1)} fps · ${Math.round(tune.sendMs / Math.max(1, tune.sends))} ms per send`, 'good');
+    Object.assign(tune, { rateAt: now, rateSent: tune.sent, sends: 0, sendMs: 0 });
+  }
+}
+
+function tuneFailed(err) {
+  dbg('tuneshine send failed:', err.name, err.message);
+  if (++tune.fails < 3) return false;
+  tuneSetLive(false);
+  tuneStatus('Lost the Tuneshine. Check it’s on and try again.', 'bad');
+  return true;
+}
+
+// Instant: one picture per request, the next as soon as the last has
+// arrived (never faster than the speed asked for). The least delay, but the
+// round trip caps the frame rate.
+async function tuneInstantLoop(gen) {
+  while (tune.live && gen === tune.gen) {
     const t0 = performance.now();
     try {
       tuneRender();
       await tuneUpload(await tuneWebp());
-      tune.sent++;
-      tune.fails = 0;
-      // Once a second: how fast frames are actually getting there.
-      const now = performance.now();
-      if (!tune.rateAt || now - tune.rateAt >= 1000) {
-        const fps = tune.rateAt ? ((tune.sent - tune.rateSent) * 1000) / (now - tune.rateAt) : 0;
-        tuneStatus(`Live on the Tuneshine${fps ? ` · ${fps.toFixed(1)} fps` : ''}`, 'good');
-        tune.rateAt = now;
-        tune.rateSent = tune.sent;
-      }
+      tuneDelivered(1, performance.now() - t0);
     } catch (err) {
-      dbg('tuneshine frame failed:', err.name, err.message);
-      if (++tune.fails >= 3) {
-        tuneSetLive(false);
-        tuneStatus('Lost the Tuneshine. Check it’s on and try again.', 'bad');
-        return;
+      if (tuneFailed(err)) return;
+    }
+    const wait = 1000 / +ui.tuneFps.value - (performance.now() - t0);
+    if (wait > 0) await sleep(wait);
+  }
+}
+
+// Smooth: frames are captured at the full speed and sent as short animated
+// clips while the next one records, so the Tuneshine plays every frame
+// itself. Far fewer requests, so a much higher frame rate, at about half a
+// second's delay. If sending falls behind, the oldest clip waiting is
+// dropped, so the delay never builds up.
+async function tuneSmoothLoop(gen) {
+  let frames = [], pending = null, sending = false;
+  const send = async () => {
+    sending = true;
+    while (pending && tune.live && gen === tune.gen) {
+      const clip = pending;
+      pending = null;
+      const t0 = performance.now();
+      try {
+        await tuneUpload(new Blob([animatedWebp(clip.frames, TUNE_SIZE, TUNE_SIZE, clip.ms, 1)], { type: 'image/webp' }));
+        tuneDelivered(clip.frames.length, performance.now() - t0);
+      } catch (err) {
+        if (tuneFailed(err)) break;
       }
     }
-    // One frame at a time, never faster than the speed asked for.
-    const wait = 1000 / +ui.tuneFps.value - (performance.now() - t0);
-    if (wait > 0) await new Promise((r) => setTimeout(r, wait));
+    sending = false;
+  };
+  let next = performance.now();
+  while (tune.live && gen === tune.gen) {
+    const fps = +ui.tuneFps.value;
+    tuneRender();
+    frames.push(new Uint8Array(await (await tuneWebp()).arrayBuffer()));
+    if (frames.length >= Math.max(2, Math.round(fps * TUNE_CLIP_S))) {
+      pending = { frames, ms: Math.round(1000 / fps) };
+      frames = [];
+      if (!sending) send();
+    }
+    next += 1000 / fps;
+    const wait = next - performance.now();
+    if (wait > 0) await sleep(wait);
+    else next = performance.now(); // running late: don't try to catch up
   }
 }
 
 function tuneSetLive(on) {
   tune.live = on;
+  tune.gen = (tune.gen || 0) + 1; // a loop from before stops itself
   ui.tuneLiveBtn.setAttribute('aria-pressed', String(on));
   ui.tuneLiveBtn.textContent = on ? '● Live' : '▶ Go live';
   if (on) {
-    tune.sent = 0;
-    tune.fails = 0;
-    tune.rateAt = 0;
+    Object.assign(tune, { sent: 0, sends: 0, sendMs: 0, fails: 0, rateAt: 0 });
     tuneStatus('Going live…');
-    tuneLiveLoop();
+    (ui.tuneMode.value === 'smooth' ? tuneSmoothLoop : tuneInstantLoop)(tune.gen);
   }
 }
 
@@ -3832,7 +3887,7 @@ function tuneBrightness() {
 // Mux still WebP frames (as canvas.toBlob makes them) into one animated WebP:
 // a VP8X header with the animation flag, an ANIM chunk (loop forever), then
 // one ANMF chunk per frame wrapping that frame's image chunks.
-function animatedWebp(frames, w, h, ms) {
+function animatedWebp(frames, w, h, ms, loops = 0) {
   const enc = new TextEncoder();
   const u24 = (v) => [v & 255, (v >> 8) & 255, (v >> 16) & 255];
   const u32 = (v) => [v & 255, (v >> 8) & 255, (v >> 16) & 255, (v >>> 24) & 255];
@@ -3867,7 +3922,7 @@ function animatedWebp(frames, w, h, ms) {
     return cat(keep);
   };
   const vp8x = chunk('VP8X', new Uint8Array([0x02, 0, 0, 0, ...u24(w - 1), ...u24(h - 1)]));
-  const anim = chunk('ANIM', new Uint8Array([0, 0, 0, 255, 0, 0]));
+  const anim = chunk('ANIM', new Uint8Array([0, 0, 0, 255, loops & 255, loops >> 8])); // 0 loops forever
   // Each frame: at 0,0, full size, its duration, no blending, no disposal.
   const anmf = frames.map((f) => chunk('ANMF', cat([new Uint8Array([...u24(0), ...u24(0), ...u24(w - 1), ...u24(h - 1), ...u24(ms), 0x02]), imageChunks(f)])));
   const body = cat([enc.encode('WEBP'), vp8x, anim, ...anmf]);
@@ -5045,6 +5100,7 @@ ui.tuneFps.addEventListener('input', () => {
   paintRange(ui.tuneFps);
 });
 ui.tuneGrid.addEventListener('change', () => tune.connected && tuneRender());
+ui.tuneMode.addEventListener('change', () => tune.live && tuneSetLive(true)); // restart in the new mode
 ui.tuneFpsOut.textContent = `${ui.tuneFps.value} fps`;
 ui.tuneBrightOut.textContent = `${ui.tuneBright.value}%`;
 ui.mic.checked = false; // starts off, even if the browser restored the box
@@ -5141,5 +5197,5 @@ try {
 } catch (err) {
   ui.error.textContent = `Setup failed: ${err.message}`;
 }
-window.emojiFiedReady = '39';
+window.emojiFiedReady = '40';
 dbg('app.js v36 initialised');

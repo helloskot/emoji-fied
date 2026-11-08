@@ -15,7 +15,7 @@
   <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🤩</text></svg>" />
   <link rel="preload" href="fonts/bricolage-grotesque.woff2" as="font" type="font/woff2" crossorigin />
   <link rel="preload" href="fonts/dm-mono-500.woff2" as="font" type="font/woff2" crossorigin />
-  <link rel="stylesheet" href="style.css?v=39" />
+  <link rel="stylesheet" href="style.css?v=40" />
 </head>
 <body>
   <header>
@@ -60,7 +60,7 @@
           </div>
           <p class="status" id="status" aria-live="polite"></p>
           <p class="error" id="error" role="alert"></p>
-          <p class="note">Everything runs in your browser. No video leaves your device. <span class="version">v39</span></p>
+          <p class="note">Everything runs in your browser. No video leaves your device. <span class="version">v40</span></p>
         </div>
       </div>
     </div>
@@ -395,9 +395,16 @@
                 <option value="16">16 × 16 · more detail</option>
               </select>
             </label>
+            <label class="field">
+              <span>Live</span>
+              <select id="tuneMode">
+                <option value="smooth" selected>Smooth · short clips, about ½ s behind</option>
+                <option value="instant">Instant · one picture at a time</option>
+              </select>
+            </label>
             <label class="field range">
               <span>Live speed <output id="tuneFpsOut"></output></span>
-              <input id="tuneFps" type="range" min="1" max="10" step="1" value="4" />
+              <input id="tuneFps" type="range" min="1" max="30" step="1" value="15" />
             </label>
             <label class="field range">
               <span>Brightness <output id="tuneBrightOut"></output></span>
@@ -629,7 +636,7 @@
             function () { var r = document.createRange(); r.selectNodeContents(pre); var s = getSelection(); s.removeAllRanges(); s.addRange(r); }
           );
         });
-        dbg('page v39', navigator.userAgent);
+        dbg('page v40', navigator.userAgent);
         dbg('secure=' + window.isSecureContext, 'mediaDevices=' + !!navigator.mediaDevices,
             'getUserMedia=' + !!(navigator.mediaDevices && navigator.mediaDevices.getUserMedia));
         if (navigator.permissions && navigator.permissions.query) {
@@ -650,11 +657,11 @@
       window.addEventListener('unhandledrejection', function (e) { dbg('REJECTION', String(e.reason)); show((e.reason && e.reason.message) || String(e.reason)); });
       window.addEventListener('load', function () {
         dbg('load event, app ready = ' + window.emojiFiedReady);
-        if (window.emojiFiedReady !== '39') show('an old or broken copy of the app loaded. Close this tab and open the link again.');
+        if (window.emojiFiedReady !== '40') show('an old or broken copy of the app loaded. Close this tab and open the link again.');
       });
     })();
   </script>
-  <script src="gif.js?v=39"></script>
-  <script src="app.js?v=39"></script>
+  <script src="gif.js?v=40"></script>
+  <script src="app.js?v=40"></script>
 </body>
 </html>
