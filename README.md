@@ -100,7 +100,7 @@ source, style (🎲 randomizes it) and detail, then four tabs:
     buttons, toasts or cursor) to drag onto a projector and double-click for
     full screen; the controls stay here and the keys work in either window. It
     keeps running if the main window is minimised and reconnects if it reloads.
-  - **📟 Tuneshine**: show the picture on a [Tuneshine](https://www.tuneshine.rocks)
+  - **📟 Tuneshine**: show the picture on a Tuneshine
     64×64 LED display, over its local API (firmware 2.3.0+), from Chrome or
     Edge on a computer on the same Wi-Fi. Type its IP address (it's in the
     Tuneshine app) and Connect, and allow local network access when Chrome
