@@ -15,7 +15,7 @@
   <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🤩</text></svg>" />
   <link rel="preload" href="fonts/bricolage-grotesque.woff2" as="font" type="font/woff2" crossorigin />
   <link rel="preload" href="fonts/dm-mono-500.woff2" as="font" type="font/woff2" crossorigin />
-  <link rel="stylesheet" href="style.css?v=37" />
+  <link rel="stylesheet" href="style.css?v=38" />
 </head>
 <body>
   <header>
@@ -60,7 +60,7 @@
           </div>
           <p class="status" id="status" aria-live="polite"></p>
           <p class="error" id="error" role="alert"></p>
-          <p class="note">Everything runs in your browser. No video leaves your device. <span class="version">v37</span></p>
+          <p class="note">Everything runs in your browser. No video leaves your device. <span class="version">v38</span></p>
         </div>
       </div>
     </div>
@@ -107,6 +107,7 @@
             <option value="emoji:nature">Nature</option>
             <option value="emoji:animals">Animals</option>
             <option value="emoji:hearts">Hearts</option>
+            <option value="emoji:terrain">Terrain 🏔️</option>
             <option value="skull">Skulls 💀</option>
           </optgroup>
           <optgroup label="Unicode">
@@ -201,6 +202,26 @@
             <span>Highlights <output id="highlightsOut"></output></span>
             <input id="highlights" type="range" min="-1" max="1" step="0.02" value="0" />
           </label>
+        </div>
+        <div class="sec" id="topoSec">
+          <div class="sec-head">
+            <span class="field-label">🗺 Topo map</span>
+            <div class="toggles"><label title="Read the picture as a landscape: brightness is height (G)"><input id="topo" type="checkbox" /> On <kbd>G</kbd></label></div>
+          </div>
+          <div id="topoOpts" hidden>
+            <label class="field">
+              <span>Map</span>
+              <select id="topoMode">
+                <option value="map" selected>Sea, land &amp; snow</option>
+                <option value="lines">Contour lines (neon)</option>
+                <option value="paper">Paper survey</option>
+              </select>
+            </label>
+            <label class="field range">
+              <span>Contours <output id="topoLevelsOut"></output></span>
+              <input id="topoLevels" type="range" min="4" max="24" step="1" value="10" />
+            </label>
+          </div>
         </div>
         <div class="sec">
           <div class="toggles">
@@ -498,6 +519,7 @@
             <dt><kbd>D</kbd></dt><dd>🎲 Randomize</dd>
             <dt><kbd>T</kbd></dt><dd>🧱 Tetris on/off</dd>
             <dt><kbd>M</kbd></dt><dd>🔤 Words on/off</dd>
+            <dt><kbd>G</kbd></dt><dd>🗺 Topo map on/off</dd>
           </dl>
         </section>
         <section>
@@ -570,7 +592,7 @@
             function () { var r = document.createRange(); r.selectNodeContents(pre); var s = getSelection(); s.removeAllRanges(); s.addRange(r); }
           );
         });
-        dbg('page v37', navigator.userAgent);
+        dbg('page v38', navigator.userAgent);
         dbg('secure=' + window.isSecureContext, 'mediaDevices=' + !!navigator.mediaDevices,
             'getUserMedia=' + !!(navigator.mediaDevices && navigator.mediaDevices.getUserMedia));
         if (navigator.permissions && navigator.permissions.query) {
@@ -591,11 +613,11 @@
       window.addEventListener('unhandledrejection', function (e) { dbg('REJECTION', String(e.reason)); show((e.reason && e.reason.message) || String(e.reason)); });
       window.addEventListener('load', function () {
         dbg('load event, app ready = ' + window.emojiFiedReady);
-        if (window.emojiFiedReady !== '37') show('an old or broken copy of the app loaded. Close this tab and open the link again.');
+        if (window.emojiFiedReady !== '38') show('an old or broken copy of the app loaded. Close this tab and open the link again.');
       });
     })();
   </script>
-  <script src="gif.js?v=37"></script>
-  <script src="app.js?v=37"></script>
+  <script src="gif.js?v=38"></script>
+  <script src="app.js?v=38"></script>
 </body>
 </html>
