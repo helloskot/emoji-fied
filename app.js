@@ -139,6 +139,20 @@ const ui = {
   blank: $('#blank'),
   tetris: $('#tetris'),
   topo: $('#topo'),
+  tuneSec: $('#tuneSec'),
+  tuneStatus: $('#tuneStatus'),
+  tuneHost: $('#tuneHost'),
+  tuneConnectBtn: $('#tuneConnectBtn'),
+  tuneBody: $('#tuneBody'),
+  tunePreview: $('#tunePreview'),
+  tuneLiveBtn: $('#tuneLiveBtn'),
+  tuneLoopBtn: $('#tuneLoopBtn'),
+  tuneStopBtn: $('#tuneStopBtn'),
+  tuneGrid: $('#tuneGrid'),
+  tuneFps: $('#tuneFps'),
+  tuneFpsOut: $('#tuneFpsOut'),
+  tuneBright: $('#tuneBright'),
+  tuneBrightOut: $('#tuneBrightOut'),
   topoOpts: $('#topoOpts'),
   topoMode: $('#topoMode'),
   topoLevels: $('#topoLevels'),
@@ -555,7 +569,7 @@ function sampleFrame(sc, sx, crop, fx, mirror, punched, words) {
   sx.restore();
   const img = sx.getImageData(0, 0, sw, sh);
   adjustPixels(img.data, fx, punched);
-  if (ui.topo.checked) topoPixels(img.data, sw, sh, punched);
+  if (ui.topo.checked) topoPixels(img.data, sw, sh, punched && sc === sample);
   if (punched) punchPixels(img.data, sw, sh);
   // Written back so the full-colour tint pass sees the adjusted colours.
   sx.putImageData(img, 0, 0);
@@ -3378,7 +3392,7 @@ function openOutput() {
     show.win.focus();
     return;
   }
-  const win = window.open('output.html?v=38', 'emojiFiedOutput', 'popup,width=960,height=540');
+  const win = window.open('output.html?v=39', 'emojiFiedOutput', 'popup,width=960,height=540');
   if (!win) {
     toast('Allow pop-ups for this site to open the output window');
     return;
@@ -3526,6 +3540,344 @@ function safeLook() {
   renderScenes();
   liveToast('🛟 Safe look');
 }
+
+// ---- Tuneshine ----------------------------------------------------------------
+// A 64×64 LED display that normally shows album art. Since firmware 2.3.0 it
+// takes pictures over the local network: POST /image with a 64×64 WebP (an
+// animated one plays by itself), DELETE /image hands it back to the music,
+// POST /brightness, GET /state. This page is https and the Tuneshine is plain
+// http on the Wi-Fi, which only Chrome and Edge allow (after asking to reach
+// local devices), hence targetAddressSpace on every request.
+//
+// It gets its own little picture rather than a shrunk copy, which would be
+// mush at 64 pixels: big emoji on an 8-16 cell grid, or for the unicode
+// styles glowing LED dots, sized by brightness.
+
+const TUNE_SIZE = 64;
+const TUNE_LOOP_FRAMES = 30, TUNE_LOOP_MS = 100; // 3 s at 10 fps
+const tune = {
+  base: '', connected: false, cors: null, tas: null, live: false, busy: false, fails: 0, sent: 0,
+  sample: document.createElement('canvas'), ctx: ui.tunePreview.getContext('2d'),
+};
+tune.sctx = tune.sample.getContext('2d', { willReadFrequently: true });
+
+function tuneStatus(text, tone = '') {
+  ui.tuneStatus.textContent = text;
+  ui.tuneStatus.className = `hint ${tone}`;
+}
+
+// Accepts "192.168.1.42", "tuneshine-ab12.local", "http://…/" and so on.
+function tuneBase(raw) {
+  const host = raw.trim().replace(/^https?:\/\//i, '').replace(/\/.*$/, '');
+  return host ? `http://${host}` : '';
+}
+
+// fetch, saying the Tuneshine is on the local network, which Chrome needs
+// before an https page may reach a plain http device. Chrome refuses the
+// request outright if the address turns out to be in another space (or an
+// older version doesn't know the name), so then it's tried without.
+async function tuneNet(url, opts) {
+  if (tune.tas !== false) {
+    try {
+      const r = await fetch(url, { ...opts, targetAddressSpace: 'local' });
+      tune.tas = true;
+      return r;
+    } catch (err) {
+      if (err.name !== 'TypeError' || tune.tas === true) throw err;
+    }
+  }
+  const r = await fetch(url, opts);
+  if (tune.tas == null) dbg('tuneshine: reached without targetAddressSpace');
+  tune.tas = false;
+  return r;
+}
+
+// A request to the device. The first time, it's tried as a normal request; if
+// the Tuneshine doesn't let web pages read its answers (no CORS headers), it
+// falls back to an opaque one, which still delivers uploads but can't be
+// checked. Preflighted requests (DELETE, JSON) only work with CORS.
+async function tuneFetch(path, opts = {}, { readable = false, timeout = 6000 } = {}) {
+  const url = tune.base + path;
+  const o = { cache: 'no-store', ...opts };
+  if (tune.cors !== false || readable) {
+    try {
+      const r = await tuneNet(url, { ...o, signal: AbortSignal.timeout(timeout) });
+      if (!r.ok) throw Object.assign(new Error(`HTTP ${r.status}`), { http: r.status });
+      tune.cors = true;
+      return r;
+    } catch (err) {
+      if (err.http || readable) throw err;
+      if (tune.cors === true) throw err; // it answered before: a real failure
+      tune.cors = false;
+      dbg('tuneshine: no CORS, sending opaque requests');
+    }
+  }
+  return tuneNet(url, { ...o, mode: 'no-cors', signal: AbortSignal.timeout(timeout) });
+}
+
+async function tuneConnect() {
+  const base = tuneBase(ui.tuneHost.value);
+  if (!base) {
+    tuneStatus('Type the Tuneshine’s address first', 'bad');
+    ui.tuneHost.focus();
+    return;
+  }
+  try { localStorage.setItem('emojiFiedTuneshine', ui.tuneHost.value.trim()); } catch {}
+  tuneStop({ quiet: true });
+  Object.assign(tune, { base, connected: false, cors: null, tas: null });
+  tuneStatus('Looking for it…');
+  ui.tuneConnectBtn.disabled = true;
+  try {
+    const st = await (await tuneFetch('/state', {}, { readable: true })).json();
+    const fw = st.firmwareVersion || '';
+    tuneConnected(`Connected to ${st.name || 'your Tuneshine'}${fw ? ` · firmware ${fw}` : ''}`);
+    dbg('tuneshine state:', JSON.stringify(st).slice(0, 300));
+  } catch (err) {
+    dbg('tuneshine /state:', err.name, err.message);
+    try {
+      // Something answered, even if it won't say what it is.
+      await tuneNet(`${base}/health`, { mode: 'no-cors', cache: 'no-store', signal: AbortSignal.timeout(6000) });
+      tune.cors = false;
+      tuneConnected('Connected (it doesn’t share its name with web pages)');
+    } catch (err2) {
+      dbg('tuneshine /health:', err2.name, err2.message);
+      const chromium = !!navigator.userAgentData?.brands?.some((b) => /Chrom|Edge/.test(b.brand));
+      tuneStatus(chromium
+        ? 'Couldn’t reach it. Check the address, that this computer is on the same Wi-Fi, and that you allowed local network access.'
+        : 'Couldn’t reach it. This browser blocks local devices: use Chrome or Edge on a computer.', 'bad');
+    }
+  } finally {
+    ui.tuneConnectBtn.disabled = false;
+  }
+}
+
+function tuneConnected(msg) {
+  tune.connected = true;
+  tune.fails = 0;
+  ui.tuneBody.hidden = false;
+  ui.tuneSec.classList.add('on');
+  ui.tuneConnectBtn.textContent = 'Reconnect';
+  tuneStatus(msg, 'good');
+  tuneRender();
+}
+
+// Draw the Tuneshine's picture into the preview canvas (which is what gets
+// sent): a square crop of the view, through the same adjustments, effects,
+// topo map and words as the main picture.
+function tuneRender() {
+  const c = tune.ctx, S = TUNE_SIZE;
+  c.setTransform(1, 0, 0, 1, 0, 0);
+  c.fillStyle = '#000';
+  c.fillRect(0, 0, S, S);
+  if (!hasSource() || !frameReady()) return;
+  const N = +ui.tuneGrid.value, cell = S / N;
+  const [x0, y0, w0, h0] = punchCrop(viewCrop());
+  const side = Math.min(w0, h0);
+  if (tune.sample.width !== N) tune.sample.width = tune.sample.height = N;
+  const d = sampleFrame(tune.sample, tune.sctx, [x0 + (w0 - side) / 2, y0 + (h0 - side) / 2, side, side], state.fx, ui.mirror.checked, true, true);
+
+  const pal = state.palette;
+  if (state.kind === 'emoji') {
+    c.imageSmoothingEnabled = true;
+    c.imageSmoothingQuality = 'high';
+    const byBrightness = ui.match.value === 'brightness';
+    for (let i = 0; i < N * N; i++) {
+      const p = i * 4, l = luma(d[p], d[p + 1], d[p + 2]);
+      if (ui.blank.checked && l < 28) continue;
+      const e = byBrightness
+        ? pal.byLum[Math.min(pal.byLum.length - 1, ((l / 256) * pal.byLum.length) | 0)]
+        : pal.entries[nearestEmoji(pal, d[p], d[p + 1], d[p + 2])];
+      c.drawImage(pal.atlas, e.sx, e.sy, pal.cw, pal.ch, (i % N) * cell, ((i / N) | 0) * cell, cell, cell);
+    }
+  } else {
+    // LED dots: bigger and brighter where the picture is, in its own colour
+    // or the ink.
+    const ink = ui.ink.value === 'full' ? null : [1, 3, 5].map((k) => parseInt(ui.ink.value.slice(k, k + 2), 16));
+    for (let i = 0; i < N * N; i++) {
+      const p = i * 4, l = luma(d[p], d[p + 1], d[p + 2]) / 255;
+      if (l < 0.07) continue;
+      const lift = 255 / Math.max(1, d[p], d[p + 1], d[p + 2]);
+      const [r, g, b] = ink ? ink.map((v) => v * (0.35 + 0.65 * l)) : [d[p] * lift, d[p + 1] * lift, d[p + 2] * lift].map((v) => v * (0.3 + 0.7 * l));
+      c.fillStyle = `rgb(${r | 0} ${g | 0} ${b | 0})`;
+      c.beginPath();
+      c.arc(((i % N) + 0.5) * cell, (((i / N) | 0) + 0.5) * cell, (cell / 2) * (0.35 + 0.65 * l), 0, Math.PI * 2);
+      c.fill();
+    }
+  }
+  // Blackout and the strobe reach the Tuneshine too.
+  const dark = punchOn('strobe') && strobeIsDark(performance.now()) ? 1 : show.black;
+  if (dark > 0) {
+    c.fillStyle = `rgba(0, 0, 0, ${dark})`;
+    c.fillRect(0, 0, S, S);
+  }
+}
+
+const tuneWebp = () => new Promise((res, rej) => ui.tunePreview.toBlob((b) => (b?.type === 'image/webp' ? res(b) : rej(new Error('this browser can’t make WebP'))), 'image/webp', 0.92));
+
+function tuneUpload(blob) {
+  const fd = new FormData();
+  fd.append('image', blob, 'emojified.webp');
+  fd.append('metadata', new Blob([JSON.stringify({ trackName: describeLook(), artistName: 'emoji·fied', serviceName: 'emoji·fied' })], { type: 'application/json' }));
+  return tuneFetch('/image', { method: 'POST', body: fd });
+}
+
+async function tuneLiveLoop() {
+  while (tune.live) {
+    const t0 = performance.now();
+    try {
+      tuneRender();
+      await tuneUpload(await tuneWebp());
+      tune.sent++;
+      tune.fails = 0;
+      // Once a second: how fast frames are actually getting there.
+      const now = performance.now();
+      if (!tune.rateAt || now - tune.rateAt >= 1000) {
+        const fps = tune.rateAt ? ((tune.sent - tune.rateSent) * 1000) / (now - tune.rateAt) : 0;
+        tuneStatus(`Live on the Tuneshine${fps ? ` · ${fps.toFixed(1)} fps` : ''}`, 'good');
+        tune.rateAt = now;
+        tune.rateSent = tune.sent;
+      }
+    } catch (err) {
+      dbg('tuneshine frame failed:', err.name, err.message);
+      if (++tune.fails >= 3) {
+        tuneSetLive(false);
+        tuneStatus('Lost the Tuneshine. Check it’s on and try again.', 'bad');
+        return;
+      }
+    }
+    // One frame at a time, never faster than the speed asked for.
+    const wait = 1000 / +ui.tuneFps.value - (performance.now() - t0);
+    if (wait > 0) await new Promise((r) => setTimeout(r, wait));
+  }
+}
+
+function tuneSetLive(on) {
+  tune.live = on;
+  ui.tuneLiveBtn.setAttribute('aria-pressed', String(on));
+  ui.tuneLiveBtn.textContent = on ? '● Live' : '▶ Go live';
+  if (on) {
+    tune.sent = 0;
+    tune.fails = 0;
+    tune.rateAt = 0;
+    tuneStatus('Going live…');
+    tuneLiveLoop();
+  }
+}
+
+// Record a short loop and send it as one animated WebP: the Tuneshine plays
+// it by itself, even after this page is closed.
+async function tuneSendLoop() {
+  if (tune.busy) return;
+  if (!hasSource() || !frameReady()) {
+    tuneStatus('Start the camera or a video first', 'bad');
+    return;
+  }
+  tuneSetLive(false);
+  tune.busy = true;
+  ui.tuneLoopBtn.disabled = true;
+  try {
+    const frames = [];
+    const t0 = performance.now();
+    for (let i = 0; i < TUNE_LOOP_FRAMES; i++) {
+      tuneStatus(`Recording the loop… ${Math.ceil(((TUNE_LOOP_FRAMES - i) * TUNE_LOOP_MS) / 1000)} s`);
+      tuneRender();
+      frames.push(new Uint8Array(await (await tuneWebp()).arrayBuffer()));
+      const wait = t0 + (i + 1) * TUNE_LOOP_MS - performance.now();
+      if (wait > 0) await new Promise((r) => setTimeout(r, wait));
+    }
+    const loop = new Blob([animatedWebp(frames, TUNE_SIZE, TUNE_SIZE, TUNE_LOOP_MS)], { type: 'image/webp' });
+    tuneStatus('Sending the loop…');
+    await tuneUpload(loop);
+    tuneStatus(`Loop playing on the Tuneshine (${Math.round(loop.size / 1024)} KB)`, 'good');
+    dbg(`tuneshine loop: ${frames.length} frames, ${loop.size} bytes`);
+  } catch (err) {
+    dbg('tuneshine loop failed:', err.name, err.message);
+    tuneStatus(`Couldn’t send the loop: ${err.message}`, 'bad');
+  } finally {
+    tune.busy = false;
+    ui.tuneLoopBtn.disabled = false;
+  }
+}
+
+async function tuneStop({ quiet = false } = {}) {
+  tuneSetLive(false);
+  if (!tune.connected) return;
+  try {
+    await tuneFetch('/image', { method: 'DELETE', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ preserveImage: false }) }, { readable: true });
+    if (!quiet) tuneStatus('Handed back to the music', 'good');
+  } catch (err) {
+    dbg('tuneshine DELETE:', err.name, err.message);
+    if (!quiet) tuneStatus('Stopped sending. The Tuneshine won’t let web pages clear it: clear it in the Tuneshine app.', 'bad');
+  }
+}
+
+let tuneBrightTimer = 0;
+function tuneBrightness() {
+  ui.tuneBrightOut.textContent = `${ui.tuneBright.value}%`;
+  paintRange(ui.tuneBright);
+  clearTimeout(tuneBrightTimer);
+  if (!tune.connected) return;
+  tuneBrightTimer = setTimeout(async () => {
+    const body = JSON.stringify({ active: +ui.tuneBright.value });
+    try {
+      await tuneFetch('/brightness', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body }, { readable: true });
+    } catch {
+      // Without CORS a JSON request can't be sent; plain text gets through,
+      // if the Tuneshine reads it as JSON anyway.
+      tuneNet(`${tune.base}/brightness`, { method: 'POST', mode: 'no-cors', body }).catch(() => {});
+    }
+  }, 250);
+}
+
+// Mux still WebP frames (as canvas.toBlob makes them) into one animated WebP:
+// a VP8X header with the animation flag, an ANIM chunk (loop forever), then
+// one ANMF chunk per frame wrapping that frame's image chunks.
+function animatedWebp(frames, w, h, ms) {
+  const enc = new TextEncoder();
+  const u24 = (v) => [v & 255, (v >> 8) & 255, (v >> 16) & 255];
+  const u32 = (v) => [v & 255, (v >> 8) & 255, (v >> 16) & 255, (v >>> 24) & 255];
+  const chunk = (id, data) => {
+    const pad = data.length & 1;
+    const out = new Uint8Array(8 + data.length + pad);
+    out.set(enc.encode(id), 0);
+    out.set(u32(data.length), 4);
+    out.set(data, 8);
+    return out;
+  };
+  const cat = (parts) => {
+    const out = new Uint8Array(parts.reduce((n, p) => n + p.length, 0));
+    let o = 0;
+    for (const p of parts) {
+      out.set(p, o);
+      o += p.length;
+    }
+    return out;
+  };
+  // A still WebP is RIFF....WEBP then chunks; keep its image data (ALPH,
+  // VP8, VP8L) and drop any VP8X header of its own.
+  const imageChunks = (f) => {
+    const keep = [];
+    for (let o = 12; o + 8 <= f.length;) {
+      const id = String.fromCharCode(...f.subarray(o, o + 4));
+      const len = f[o + 4] | (f[o + 5] << 8) | (f[o + 6] << 16) | (f[o + 7] << 24);
+      const end = o + 8 + len + (len & 1);
+      if (id === 'ALPH' || id === 'VP8 ' || id === 'VP8L') keep.push(f.subarray(o, end));
+      o = end;
+    }
+    return cat(keep);
+  };
+  const vp8x = chunk('VP8X', new Uint8Array([0x02, 0, 0, 0, ...u24(w - 1), ...u24(h - 1)]));
+  const anim = chunk('ANIM', new Uint8Array([0, 0, 0, 255, 0, 0]));
+  // Each frame: at 0,0, full size, its duration, no blending, no disposal.
+  const anmf = frames.map((f) => chunk('ANMF', cat([new Uint8Array([...u24(0), ...u24(0), ...u24(w - 1), ...u24(h - 1), ...u24(ms), 0x02]), imageChunks(f)])));
+  const body = cat([enc.encode('WEBP'), vp8x, anim, ...anmf]);
+  return cat([enc.encode('RIFF'), new Uint8Array(u32(body.length)), body]);
+}
+
+// While connected and not sending, the preview follows the picture.
+setInterval(() => {
+  if (tune.connected && !tune.live && !tune.busy && !ui.tuneBody.hidden && ui.tuneBody.offsetParent) tuneRender();
+}, 200);
 
 // ---- Punch-in effects ---------------------------------------------------------
 // Momentary effects, like a DJ's: on while a key or button is held, off as
@@ -4673,6 +5025,28 @@ for (const el of [ui.topo, ui.topoMode, ui.topoLevels]) {
   el.addEventListener('change', syncTopo);
 }
 syncTopo();
+// Every iPhone and iPad browser is Safari underneath, which can't reach
+// local devices from a web page at all: leave the Tuneshine out there.
+ui.tuneSec.hidden = /iPhone|iPad|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+try { ui.tuneHost.value = localStorage.getItem('emojiFiedTuneshine') || ''; } catch {}
+ui.tuneConnectBtn.addEventListener('click', tuneConnect);
+ui.tuneHost.addEventListener('keydown', (e) => {
+  if (e.key === 'Enter') tuneConnect();
+});
+ui.tuneLiveBtn.addEventListener('click', () => {
+  if (!tune.live && (!hasSource() || !frameReady())) return tuneStatus('Start the camera or a video first', 'bad');
+  tuneSetLive(!tune.live);
+});
+ui.tuneLoopBtn.addEventListener('click', tuneSendLoop);
+ui.tuneStopBtn.addEventListener('click', () => tuneStop());
+ui.tuneBright.addEventListener('input', tuneBrightness);
+ui.tuneFps.addEventListener('input', () => {
+  ui.tuneFpsOut.textContent = `${ui.tuneFps.value} fps`;
+  paintRange(ui.tuneFps);
+});
+ui.tuneGrid.addEventListener('change', () => tune.connected && tuneRender());
+ui.tuneFpsOut.textContent = `${ui.tuneFps.value} fps`;
+ui.tuneBrightOut.textContent = `${ui.tuneBright.value}%`;
 ui.mic.checked = false; // starts off, even if the browser restored the box
 ui.midi.addEventListener('change', () => (ui.midi.checked ? enableMidi() : disableMidi()));
 ui.midi.checked = false; // MIDI starts off, even if the browser restored the box
@@ -4767,5 +5141,5 @@ try {
 } catch (err) {
   ui.error.textContent = `Setup failed: ${err.message}`;
 }
-window.emojiFiedReady = '38';
+window.emojiFiedReady = '39';
 dbg('app.js v36 initialised');

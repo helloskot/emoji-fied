@@ -15,7 +15,7 @@
   <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🤩</text></svg>" />
   <link rel="preload" href="fonts/bricolage-grotesque.woff2" as="font" type="font/woff2" crossorigin />
   <link rel="preload" href="fonts/dm-mono-500.woff2" as="font" type="font/woff2" crossorigin />
-  <link rel="stylesheet" href="style.css?v=38" />
+  <link rel="stylesheet" href="style.css?v=39" />
 </head>
 <body>
   <header>
@@ -60,7 +60,7 @@
           </div>
           <p class="status" id="status" aria-live="polite"></p>
           <p class="error" id="error" role="alert"></p>
-          <p class="note">Everything runs in your browser. No video leaves your device. <span class="version">v38</span></p>
+          <p class="note">Everything runs in your browser. No video leaves your device. <span class="version">v39</span></p>
         </div>
       </div>
     </div>
@@ -369,6 +369,43 @@
           <span class="hint" id="outputStatus">A clean window for the projector: drag it there and double-click for full screen.</span>
           <button id="outputClose" type="button" class="reset" hidden>Close the output window</button>
         </div>
+        <div class="sec tune" id="tuneSec">
+          <div class="sec-head">
+            <span class="field-label">📟 Tuneshine</span>
+            <span class="hint" id="tuneStatus">Show the picture on your Tuneshine</span>
+          </div>
+          <div class="tune-connect">
+            <input id="tuneHost" type="text" placeholder="Its IP address, e.g. 192.168.1.42" autocomplete="off" spellcheck="false" inputmode="url" aria-label="Tuneshine address" />
+            <button id="tuneConnectBtn" type="button">Connect</button>
+          </div>
+          <div class="tune-body" id="tuneBody" hidden>
+            <div class="tune-main">
+              <canvas id="tunePreview" width="64" height="64" aria-label="What the Tuneshine shows"></canvas>
+              <div class="tune-actions">
+                <button id="tuneLiveBtn" type="button" class="primary" aria-pressed="false">▶ Go live</button>
+                <button id="tuneLoopBtn" type="button">🔁 Send a 3 s loop</button>
+                <button id="tuneStopBtn" type="button" title="Clear the picture: the Tuneshine goes back to your music">⏹ Back to the music</button>
+              </div>
+            </div>
+            <label class="field">
+              <span>Grid</span>
+              <select id="tuneGrid">
+                <option value="8">8 × 8 · big emoji</option>
+                <option value="12" selected>12 × 12</option>
+                <option value="16">16 × 16 · more detail</option>
+              </select>
+            </label>
+            <label class="field range">
+              <span>Live speed <output id="tuneFpsOut"></output></span>
+              <input id="tuneFps" type="range" min="1" max="10" step="1" value="4" />
+            </label>
+            <label class="field range">
+              <span>Brightness <output id="tuneBrightOut"></output></span>
+              <input id="tuneBright" type="range" min="1" max="100" step="1" value="60" />
+            </label>
+          </div>
+          <p class="note" id="tuneNote">Works from Chrome or Edge on a computer on the same Wi-Fi (Tuneshine firmware 2.3.0 or later). The address is in the Tuneshine app. When Chrome asks to reach devices on your local network, allow it.</p>
+        </div>
         <div class="sec">
           <span class="field-label">Panic</span>
           <div class="panic">
@@ -592,7 +629,7 @@
             function () { var r = document.createRange(); r.selectNodeContents(pre); var s = getSelection(); s.removeAllRanges(); s.addRange(r); }
           );
         });
-        dbg('page v38', navigator.userAgent);
+        dbg('page v39', navigator.userAgent);
         dbg('secure=' + window.isSecureContext, 'mediaDevices=' + !!navigator.mediaDevices,
             'getUserMedia=' + !!(navigator.mediaDevices && navigator.mediaDevices.getUserMedia));
         if (navigator.permissions && navigator.permissions.query) {
@@ -613,11 +650,11 @@
       window.addEventListener('unhandledrejection', function (e) { dbg('REJECTION', String(e.reason)); show((e.reason && e.reason.message) || String(e.reason)); });
       window.addEventListener('load', function () {
         dbg('load event, app ready = ' + window.emojiFiedReady);
-        if (window.emojiFiedReady !== '38') show('an old or broken copy of the app loaded. Close this tab and open the link again.');
+        if (window.emojiFiedReady !== '39') show('an old or broken copy of the app loaded. Close this tab and open the link again.');
       });
     })();
   </script>
-  <script src="gif.js?v=38"></script>
-  <script src="app.js?v=38"></script>
+  <script src="gif.js?v=39"></script>
+  <script src="app.js?v=39"></script>
 </body>
 </html>

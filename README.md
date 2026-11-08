@@ -100,6 +100,21 @@ source, style (🎲 randomizes it) and detail, then four tabs:
     buttons, toasts or cursor) to drag onto a projector and double-click for
     full screen; the controls stay here and the keys work in either window. It
     keeps running if the main window is minimised and reconnects if it reloads.
+  - **📟 Tuneshine**: show the picture on a Tuneshine
+    64×64 LED display, over its local API (firmware 2.3.0+), from Chrome or
+    Edge on a computer on the same Wi-Fi. Type its IP address (it's in the
+    Tuneshine app) and Connect, and allow local network access when Chrome
+    asks. It gets its own picture made for 64 pixels rather than a shrunk
+    copy: big emoji on an 8×8, 12×12 or 16×16 grid, or LED dots for the
+    unicode styles, with adjustments, beat effects, punch-ins, topo map,
+    words and blackout carried through. A preview shows exactly what's sent.
+    **▶ Go live** streams it at up to 1–10 fps (one frame at a time, so it
+    can't flood the device). **🔁 Send a 3 s loop** sends one animated WebP
+    that keeps playing by itself after you close the page. **Brightness**,
+    and **⏹ Back to the music** clears it. If the Tuneshine doesn't allow
+    requests from web pages (CORS), pictures still get through, but clearing
+    it has to be done in the Tuneshine app. Hidden on iPhone and iPad, whose
+    browsers can't reach local devices.
   - **Panic**: `B` fades to black and back (with an output window only the
     output goes black; this window dims, with a label), `Space` freezes, `0`
     jumps to a safe default look.
