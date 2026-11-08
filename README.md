@@ -108,8 +108,13 @@ source, style (🎲 randomizes it) and detail, then four tabs:
     copy: big emoji on an 8×8, 12×12 or 16×16 grid, or LED dots for the
     unicode styles, with adjustments, beat effects, punch-ins, topo map,
     words and blackout carried through. A preview shows exactly what's sent.
-    **▶ Go live** streams it at up to 1–10 fps (one frame at a time, so it
-    can't flood the device). **🔁 Send a 3 s loop** sends one animated WebP
+    **▶ Go live** streams it at 1–30 fps, in one of two modes. **Smooth**
+    (the default) sends short animated clips of about half a second while
+    the next one records, so the Tuneshine plays every frame itself: a much
+    higher frame rate, about half a second behind. **Instant** sends one
+    picture at a time, the next as soon as the last arrives: the least
+    delay, but the round trip caps the frame rate. The status shows the fps
+    reaching the Tuneshine and how long each send takes. **🔁 Send a 3 s loop** sends one animated WebP
     that keeps playing by itself after you close the page. **Brightness**,
     and **⏹ Back to the music** clears it. If the Tuneshine doesn't allow
     requests from web pages (CORS), pictures still get through, but clearing
