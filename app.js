@@ -20,6 +20,8 @@ const EMOJI_SETS = {
   hearts: '❤️🧡💛💚💙💜🤎🖤🤍🩷🩵🩶💖💗💓💞💕💘💝❣️',
 };
 EMOJI_SETS.everything = Object.values(EMOJI_SETS).join('');
+// Map pieces, for the topo map (not part of Everything).
+EMOJI_SETS.terrain = '🌊💧🐳🏝️🏖️🌾🌿🍀🌳🌲🌴🍂🪵🪨🏜️⛰️🏔️🗻❄️☁️🤍';
 
 // Sets where color matching would collapse to a single hue.
 const PREFERS_BRIGHTNESS = new Set(['faces']);
@@ -136,6 +138,11 @@ const ui = {
   invert: $('#invert'),
   blank: $('#blank'),
   tetris: $('#tetris'),
+  topo: $('#topo'),
+  topoOpts: $('#topoOpts'),
+  topoMode: $('#topoMode'),
+  topoLevels: $('#topoLevels'),
+  topoLevelsOut: $('#topoLevelsOut'),
   wordsOn: $('#wordsOn'),
   words: $('#words'),
   wordsMode: $('#wordsMode'),
@@ -548,6 +555,7 @@ function sampleFrame(sc, sx, crop, fx, mirror, punched, words) {
   sx.restore();
   const img = sx.getImageData(0, 0, sw, sh);
   adjustPixels(img.data, fx, punched);
+  if (ui.topo.checked) topoPixels(img.data, sw, sh, punched);
   if (punched) punchPixels(img.data, sw, sh);
   // Written back so the full-colour tint pass sees the adjusted colours.
   sx.putImageData(img, 0, 0);
@@ -558,6 +566,129 @@ function sampleFrame(sc, sx, crop, fx, mirror, punched, words) {
     return sx.getImageData(0, 0, sw, sh).data;
   }
   return img.data;
+}
+
+// ---- Topo map ---------------------------------------------------------------
+// Reads the picture as a landscape, brightness as height: smoothed into
+// gentle terrain, cut into contour bands, then painted back into the sample
+// before glyphs are chosen, so it works in every style. As a map (sea,
+// beach, fields, forest, rock, snow, with darker contour lines), as neon
+// contour lines on black, or as brown survey lines on paper. Every fifth
+// line is an index contour, drawn stronger, like on a real map.
+
+// Height (0-1) to colour, as stops; the map is coloured in flat bands.
+const TOPO_MAP = [
+  [0, 13, 47, 94], [0.18, 37, 98, 168], [0.27, 104, 170, 222], [0.3, 236, 222, 164],
+  [0.4, 146, 198, 108], [0.55, 63, 143, 69], [0.67, 166, 160, 90], [0.78, 154, 106, 62],
+  [0.88, 139, 133, 128], [1, 248, 247, 240],
+];
+const TOPO_PAPER = [240, 230, 206];
+const TOPO_INK = [150, 88, 40];
+const topo = { elev: null, buf: null, tmp: null, band: null, w: 0, h: 0 };
+
+function topoTint(t) {
+  let i = 1;
+  while (i < TOPO_MAP.length - 1 && TOPO_MAP[i][0] < t) i++;
+  const [t0, r0, g0, b0] = TOPO_MAP[i - 1], [t1, r1, g1, b1] = TOPO_MAP[i];
+  const k = Math.min(1, Math.max(0, (t - t0) / (t1 - t0)));
+  return [r0 + (r1 - r0) * k, g0 + (g1 - g0) * k, b0 + (b1 - b0) * k];
+}
+
+// Box blur in place (a running sum along rows, then columns).
+function topoBlur(e, tmp, w, h, r) {
+  const n = 2 * r + 1;
+  for (let y = 0; y < h; y++) {
+    const o = y * w;
+    let sum = e[o] * (r + 1);
+    for (let x = 1; x <= r; x++) sum += e[o + Math.min(w - 1, x)];
+    for (let x = 0; x < w; x++) {
+      tmp[o + x] = sum / n;
+      sum += e[o + Math.min(w - 1, x + r + 1)] - e[o + Math.max(0, x - r)];
+    }
+  }
+  for (let x = 0; x < w; x++) {
+    let sum = tmp[x] * (r + 1);
+    for (let y = 1; y <= r; y++) sum += tmp[Math.min(h - 1, y) * w + x];
+    for (let y = 0; y < h; y++) {
+      e[y * w + x] = sum / n;
+      sum += tmp[Math.min(h - 1, y + r + 1) * w + x] - tmp[Math.max(0, y - r) * w + x];
+    }
+  }
+}
+
+function topoPixels(d, w, h, live) {
+  const n = w * h;
+  if (!topo.buf || topo.buf.length < n) {
+    topo.buf = new Float32Array(n);
+    topo.tmp = new Float32Array(n);
+    topo.band = new Uint8Array(n);
+  }
+  let e = topo.buf;
+  for (let i = 0, p = 0; i < n; i++, p += 4) e[i] = luma(d[p], d[p + 1], d[p + 2]) / 255;
+  // Smooth hills, at any detail: the blur grows with the grid.
+  const r = Math.max(1, Math.round(w / 64));
+  topoBlur(e, topo.tmp, w, h, r);
+  topoBlur(e, topo.tmp, w, h, r);
+  // Live, the land settles over a few frames, so camera noise doesn't make
+  // the contours crawl.
+  if (live) {
+    if (topo.elev && topo.w === w && topo.h === h) {
+      const el = topo.elev;
+      for (let i = 0; i < n; i++) el[i] += (e[i] - el[i]) * 0.45;
+    } else Object.assign(topo, { elev: e.slice(0, n), w, h });
+    e = topo.elev;
+  }
+
+  // Each band's colour, plain, on a contour and on an index contour.
+  const L = +ui.topoLevels.value;
+  const mode = ui.topoMode.value;
+  const cols = new Uint8ClampedArray(L * 9);
+  for (let b = 0; b < L; b++) {
+    const t = b / (L - 1);
+    let set;
+    if (mode === 'lines') {
+      // Neon: blue valleys round the rainbow to red peaks.
+      const hue = ((1 - t) * 240) / 360;
+      set = [[0, 0, 0], hslToRgb(hue, 1, 0.56), hslToRgb(hue, 1, 0.72)];
+    } else if (mode === 'paper') {
+      set = [TOPO_PAPER, TOPO_INK, TOPO_INK.map((v) => v * 0.6)];
+    } else {
+      const c = topoTint(t);
+      set = [c, c.map((v) => v * 0.6), c.map((v) => v * 0.38)];
+    }
+    set.forEach((c, k) => cols.set(c, (b * 3 + k) * 3));
+  }
+
+  const band = topo.band;
+  for (let i = 0; i < n; i++) band[i] = Math.min(L - 1, (e[i] * L) | 0);
+  for (let y = 0, i = 0; y < h; y++) {
+    for (let x = 0; x < w; x++, i++) {
+      const b = band[i];
+      // A contour runs along the top edge of each band: wherever a
+      // neighbour is lower.
+      const line = (x > 0 && band[i - 1] < b) || (x < w - 1 && band[i + 1] < b) ||
+        (y > 0 && band[i - w] < b) || (y < h - 1 && band[i + w] < b);
+      const q = (b * 3 + (line ? (b % 5 === 0 ? 2 : 1) : 0)) * 3, p = i * 4;
+      d[p] = cols[q];
+      d[p + 1] = cols[q + 1];
+      d[p + 2] = cols[q + 2];
+    }
+  }
+}
+
+function hslToRgb(h, s, l) {
+  const k = (n) => (n + h * 12) % 12;
+  const a = s * Math.min(l, 1 - l);
+  const f = (n) => 255 * (l - a * Math.max(-1, Math.min(k(n) - 3, 9 - k(n), 1)));
+  return [f(0), f(8), f(4)];
+}
+
+function syncTopo() {
+  ui.topoOpts.hidden = !ui.topo.checked;
+  ui.topoLevelsOut.textContent = ui.topoLevels.value;
+  paintRange(ui.topoLevels);
+  if (!ui.topo.checked) topo.elev = null;
+  if (state.paused) render();
 }
 
 // ---- Words ------------------------------------------------------------------
@@ -3247,7 +3378,7 @@ function openOutput() {
     show.win.focus();
     return;
   }
-  const win = window.open('output.html?v=37', 'emojiFiedOutput', 'popup,width=960,height=540');
+  const win = window.open('output.html?v=38', 'emojiFiedOutput', 'popup,width=960,height=540');
   if (!win) {
     toast('Allow pop-ups for this site to open the output window');
     return;
@@ -3741,6 +3872,7 @@ const LEARN_RANGES = {
   highlights: ['Highlights', ui.highlights],
   fx: ['Effect strength', ui.fxStrength],
   wordsSize: ['Words size', ui.wordsSize],
+  topoLevels: ['Topo contours', ui.topoLevels],
 };
 const LEARN_BUTTONS = {
   blackout: ['Blackout', () => toggleBlackout()],
@@ -3750,6 +3882,7 @@ const LEARN_BUTTONS = {
   random: ['Randomize', () => randomize()],
   tetris: ['Tetris on/off', () => ui.tetris.click()],
   words: ['Words on/off', () => ui.wordsOn.click()],
+  topo: ['Topo map on/off', () => ui.topo.click()],
 };
 
 // What a learned id controls: { label, set(v) } for sliders, { label,
@@ -3882,6 +4015,7 @@ ui.tapBtn.dataset.learn = 'tap';
 ui.random.dataset.learn = 'random';
 ui.tetris.closest('label').dataset.learn = 'tetris';
 ui.wordsOn.closest('label').dataset.learn = 'words';
+ui.topo.closest('label').dataset.learn = 'topo';
 
 // While learning, a click picks the control instead of using it.
 for (const ev of ['pointerdown', 'mousedown', 'touchstart', 'click']) {
@@ -3917,6 +4051,7 @@ const sceneFields = () => ({
   style: ui.style, custom: ui.custom, cols: ui.cols, match: ui.match, ink: ui.ink,
   contrast: ui.contrast, bright: ui.bright, sat: ui.sat, shadows: ui.shadows, highlights: ui.highlights,
   invert: ui.invert, blank: ui.blank, tetris: ui.tetris,
+  topo: ui.topo, topoMode: ui.topoMode, topoLevels: ui.topoLevels,
   fxStrength: ui.fxStrength, beatShape: ui.beatShape, beatOutline: ui.beatOutline, beatShuffle: ui.beatShuffle,
   twinkle: ui.twinkle, kenBurns: ui.kenBurns,
   wordsOn: ui.wordsOn, words: ui.words, wordsMode: ui.wordsMode, wordsMotion: ui.wordsMotion,
@@ -3929,6 +4064,7 @@ function describeLook() {
   if (state.kind !== 'emoji') bits.push(ui.ink.selectedOptions[0]?.textContent);
   if (ui.invert.checked) bits.push('inverted');
   if (ui.tetris.checked) bits.push('🧱');
+  if (ui.topo.checked) bits.push('🗺');
   if (wordsActive()) bits.push(`💬 ${ui.words.value.trim().split('\n')[0].slice(0, 10)}`);
   return bits.join(' · ');
 }
@@ -3968,6 +4104,7 @@ function applyScene(scene) {
   if (scene.match && state.kind === 'emoji') ui.match.value = scene.match; // ...unless saved
   syncLabels();
   syncWords();
+  syncTopo();
   onBeatShapeChange();
   if (ui.tetris.checked !== tetrisWas) tetris.plan = null;
   if (state.paused) render();
@@ -4015,9 +4152,13 @@ const EXAMPLE_SCENES = [
   { id: 'drop', group: 'Words', icon: '📣', label: 'Drop It', tint: '#ff6f91', look: { style: 'emoji:rainbow', cols: '56', sat: '1.5', wordsOn: true, words: 'DROP IT', wordsColor: 'rainbow', wordsMotion: 'pulse', wordsSize: '60', beatShape: 'mix' } },
   { id: 'marquee', group: 'Words', icon: '🎞️', label: 'Marquee', tint: '#ffb000', look: { style: 'text:detailed', ink: '#ffb000', cols: '110', contrast: '1.5', bright: '0.06', wordsOn: true, words: 'NOW PLAYING ✦ EMOJI·FIED', wordsMotion: 'scroll', wordsSize: '34', wordsPos: 'bottom' } },
   { id: 'cut', group: 'Words', icon: '✂️', label: 'Cut-out', tint: '#6fe3a5', look: { style: 'emoji:nature', cols: '72', sat: '1.3', wordsOn: true, words: 'WILD', wordsMode: 'cutout', wordsSize: '85', wordsOutline: false } },
+  { id: 'topo', group: 'Maps', icon: '🗺️', label: 'Topo Map', tint: '#6fbf73', look: { style: 'emoji:terrain', cols: '64', topo: true, topoMode: 'map', topoLevels: '10' } },
+  { id: 'survey', group: 'Maps', icon: '🧭', label: 'Survey', tint: '#c98a4b', look: { style: 'text:blocks', ink: 'full', cols: '120', topo: true, topoMode: 'paper', topoLevels: '12' } },
+  { id: 'contours', group: 'Maps', icon: '〰️', label: 'Neon Contours', tint: '#5cb8ff', look: { style: 'braille', ink: 'full', cols: '130', topo: true, topoMode: 'lines', topoLevels: '14' } },
+  { id: 'atlas', group: 'Maps', icon: '🏔️', label: 'Relief', tint: '#9ad0ff', look: { style: 'text:blocks', ink: 'full', cols: '110', topo: true, topoMode: 'map', topoLevels: '16' } },
 ];
 const STARTER_SCENES = EXAMPLE_SCENES.filter((ex) => ex.starter);
-const EXAMPLE_GROUPS = ['Emoji', 'Words', 'Text & code', 'Fine detail', 'Party'];
+const EXAMPLE_GROUPS = ['Emoji', 'Words', 'Maps', 'Text & code', 'Fine detail', 'Party'];
 
 function exampleScene(ex) {
   return { ...defaultScene(), ...ex.look, label: ex.label, icon: ex.icon, tint: ex.tint, example: ex.id };
@@ -4527,6 +4668,11 @@ ui.wordsOn.addEventListener('change', () => {
   }
 });
 syncWords();
+for (const el of [ui.topo, ui.topoMode, ui.topoLevels]) {
+  el.addEventListener('input', syncTopo);
+  el.addEventListener('change', syncTopo);
+}
+syncTopo();
 ui.mic.checked = false; // starts off, even if the browser restored the box
 ui.midi.addEventListener('change', () => (ui.midi.checked ? enableMidi() : disableMidi()));
 ui.midi.checked = false; // MIDI starts off, even if the browser restored the box
@@ -4596,6 +4742,7 @@ function onKey(e) {
   if (e.key === 'd') randomize();
   if (e.key === 't') ui.tetris.click();
   if (e.key === 'm') ui.wordsOn.click();
+  if (e.key === 'g') ui.topo.click();
   if (e.key === '?') toggleKeys();
   if (e.key === 'Escape' && !ui.moreMenu.hidden) closeMenu();
   else if (e.key === 'Escape' && !ui.keysSheet.hidden) toggleKeys(false);
@@ -4620,5 +4767,5 @@ try {
 } catch (err) {
   ui.error.textContent = `Setup failed: ${err.message}`;
 }
-window.emojiFiedReady = '37';
+window.emojiFiedReady = '38';
 dbg('app.js v36 initialised');

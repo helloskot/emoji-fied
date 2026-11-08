@@ -27,7 +27,8 @@ the stream. Sharing the tab gets the same result.
 
 ## Styles
 
-- **Emoji**: Everything, Rainbow, Faces, Food, Nature, Animals, Hearts.
+- **Emoji**: Everything, Rainbow, Faces, Food, Nature, Animals, Hearts, and
+  Terrain 🏔️ (sea, beach, fields, forest, rock and snow, made for the topo map).
 - **Skulls 💀**: every cell is a skull, bigger where the picture is brighter,
   tinted with the picture's colours (or one ink colour) while keeping its eyes
   and teeth.
@@ -46,18 +47,29 @@ the stream. Sharing the tab gets the same result.
   time like the game; the finished picture holds for a few seconds, then the
   lines clear and new pieces build it again. With a beat source on (🎵 Beat),
   the beats and notes drop the pieces instead.
+- **🗺 Topo map** (on the Look tab, or press G; works with any style): the
+  picture is read as a landscape, with brightness as height. It's smoothed
+  into gentle hills and cut into contour bands (4–24), then drawn as a map:
+  **sea, land & snow** (blue water, sand, green fields, forest, brown
+  slopes, grey rock, snowy peaks, with darker contour lines), **neon
+  contour lines** on black (blue valleys to red peaks), or a **paper
+  survey** (brown lines on cream). Every fifth line is an index contour,
+  drawn stronger, like a real map. Live, the land settles over a few
+  frames so camera noise doesn't make the lines crawl. Beat flashes lift
+  the whole landscape, so the contours jump with the music.
 
 ## The controls
 
 A toolbar (⏺ Record · 📸 Photo · ⏸ Pause · ⛶ Full · 📺 TV · ⋯ More), the
 source, style (🎲 randomizes it) and detail, then four tabs:
 
-- **🎨 Look**: **Try a look**, a library of 37 example looks in five rows
-  that scroll sideways (Emoji, Words, Text & code, Fine detail, Party): tap one to
+- **🎨 Look**: **Try a look**, a library of 41 example looks in six rows
+  that scroll sideways (Emoji, Words, Maps, Text & code, Fine detail, Party): tap one to
   try it live, then save it to a scene slot (🎬 Live) to keep it, name and
   emoji included. Then match by colour or brightness (or the ink colour for unicode),
   adjustments (contrast, brightness, saturation, shadows, highlights, with
-  reset), mirror, invert, blank darks and **🧱 Tetris build**.
+  reset), **🗺 Topo map** (map, contour count), mirror, invert, blank darks
+  and **🧱 Tetris build**.
 - **🔤 Words**: type a message (up to four lines) and it's drawn into the
   picture out of the current emoji or characters, so it changes with the
   style: **over the picture** (with a dark outline so it reads), **words
