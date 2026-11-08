@@ -761,7 +761,7 @@ function render() {
   const job = {
     c: ctx, layer, lc: lctx, sample, d,
     cols: state.cols, rows: state.rows, cellW: state.cellW, cellH: state.cellH,
-    grid: state.lastGlyphs, fx: state.fx, photo: photoFx(),
+    grid: state.lastGlyphs, fx: state.fx, photo: photoFx(), batch: true,
   };
   if (state.kind === 'emoji') renderEmoji(job);
   else renderText(job);
@@ -774,6 +774,7 @@ function renderEmoji(j) {
   const blank = ui.blank.checked;
   const n = pal.byLum.length;
   if (fx) zoomPunch(c, fx);
+  if (j.batch) blitBegin(c, pal);
 
   for (let y = 0; y < rows; y++) {
     for (let x = 0; x < cols; x++) {
@@ -799,6 +800,7 @@ function renderEmoji(j) {
       drawCell(c, pal, e, x, y, cellW, cellH, fx, photo, l / 255);
     }
   }
+  if (j.batch) blitEnd(c);
   if (fx) {
     drawBeatOutlines(c, fx);
     c.setTransform(1, 0, 0, 1, 0, 0);
@@ -818,6 +820,7 @@ function renderText(j) {
   lc.globalCompositeOperation = 'source-over';
   lc.clearRect(0, 0, lay.width, lay.height);
   if (fx) zoomPunch(lc, fx);
+  if (j.batch) blitBegin(lc, pal);
 
   for (let y = 0; y < rows; y++) {
     for (let x = 0; x < cols; x++) {
@@ -845,6 +848,7 @@ function renderText(j) {
       drawCell(lc, pal, e, x, y, cellW, cellH, fx, photo, braille ? 0.8 : idx / (n - 1));
     }
   }
+  if (j.batch) blitEnd(lc);
 
   const ink = ui.ink.value;
   const paint = () => {
@@ -2544,7 +2548,8 @@ function zoomPunch(c, fx) {
 // the photo effects (twinkle glints, assemble fly-in) and the Tetris build.
 function drawCell(c, pal, e, x, y, cellW, cellH, fx, photo, bright) {
   if (!fx && !photo) {
-    c.drawImage(pal.atlas, e.sx, e.sy, pal.cw, pal.ch, x * cellW, y * cellH, cellW, cellH);
+    if (blit.on) blitCell(e.sx, e.sy, x * cellW, y * cellH, cellW, cellH);
+    else c.drawImage(pal.atlas, e.sx, e.sy, pal.cw, pal.ch, x * cellW, y * cellH, cellW, cellH);
     return;
   }
   let k = 1, ox = 0, oy = 0;
@@ -2557,7 +2562,9 @@ function drawCell(c, pal, e, x, y, cellW, cellH, fx, photo, bright) {
   }
   if (!fx) {
     const w = cellW * k, h = cellH * k;
-    c.drawImage(pal.atlas, e.sx, e.sy, pal.cw, pal.ch, x * cellW - (w - cellW) / 2 + ox, y * cellH - (h - cellH) / 2 + oy, w, h);
+    const dx = x * cellW - (w - cellW) / 2 + ox, dy = y * cellH - (h - cellH) / 2 + oy;
+    if (blit.on) blitCell(e.sx, e.sy, dx, dy, w, h);
+    else c.drawImage(pal.atlas, e.sx, e.sy, pal.cw, pal.ch, dx, dy, w, h);
     return;
   }
   k *= 1 + fx.swell * (0.3 + 0.7 * bright);
@@ -2574,7 +2581,139 @@ function drawCell(c, pal, e, x, y, cellW, cellH, fx, photo, bright) {
     dx += (Math.random() - 0.5) * cellW * fx.kick;
     dy += (Math.random() - 0.5) * cellH * fx.kick;
   }
-  c.drawImage(pal.atlas, e.sx, e.sy, pal.cw, pal.ch, dx, dy, w, h);
+  if (blit.on) blitCell(e.sx, e.sy, dx, dy, w, h);
+  else c.drawImage(pal.atlas, e.sx, e.sy, pal.cw, pal.ch, dx, dy, w, h);
+}
+
+// Glyph blits, batched. Thousands of drawImage calls a frame were by far the
+// biggest cost at high detail, so the live view queues every cell and paints
+// them all with one WebGL draw, then copies that onto the 2D canvas in one
+// go (under whatever zoom the canvas has set). Only on a real GPU: WebGL
+// drawn in software is slower than the blits it replaces. Anywhere WebGL2
+// isn't there, or if the GPU drops the context, cells go back to drawImage.
+const blit = { on: false, gl: null, failed: false, n: 0, data: new Float32Array(6 * 8192), atlas: null, software: false };
+
+function blitInit() {
+  const cv = document.createElement('canvas');
+  const gl = cv.getContext('webgl2', {
+    premultipliedAlpha: true, antialias: false, depth: false, stencil: false,
+    failIfMajorPerformanceCaveat: !blit.software,
+  });
+  if (!gl) return false;
+  const info = gl.getExtension('WEBGL_debug_renderer_info');
+  const gpu = info ? gl.getParameter(info.UNMASKED_RENDERER_WEBGL) : '';
+  if (!blit.software && /swiftshader|llvmpipe|softpipe|software|basic render/i.test(gpu)) return false;
+  const shader = (type, src) => {
+    const sh = gl.createShader(type);
+    gl.shaderSource(sh, src);
+    gl.compileShader(sh);
+    return sh;
+  };
+  const prog = gl.createProgram();
+  // Each instance is one cell: where it goes (x, y, w, h in canvas pixels)
+  // and where its glyph sits in the atlas. The quad's corners come from the
+  // vertex number, so there's no vertex buffer, just the instances.
+  gl.attachShader(prog, shader(gl.VERTEX_SHADER, `#version 300 es
+    in vec4 dst; in vec2 src;
+    uniform vec2 size, atlas, cell;
+    out vec2 uv;
+    void main() {
+      vec2 k = vec2(gl_VertexID & 1, gl_VertexID >> 1);
+      vec2 p = (dst.xy + k * dst.zw) / size;
+      gl_Position = vec4(p.x * 2.0 - 1.0, 1.0 - p.y * 2.0, 0.0, 1.0);
+      uv = (src + k * cell) / atlas;
+    }`));
+  gl.attachShader(prog, shader(gl.FRAGMENT_SHADER, `#version 300 es
+    precision mediump float;
+    uniform sampler2D tex;
+    in vec2 uv; out vec4 color;
+    void main() { color = texture(tex, uv); }`));
+  gl.linkProgram(prog);
+  if (!gl.getProgramParameter(prog, gl.LINK_STATUS)) return false;
+  gl.useProgram(prog);
+
+  const buf = gl.createBuffer();
+  gl.bindBuffer(gl.ARRAY_BUFFER, buf);
+  const dst = gl.getAttribLocation(prog, 'dst'), src = gl.getAttribLocation(prog, 'src');
+  gl.enableVertexAttribArray(dst);
+  gl.vertexAttribPointer(dst, 4, gl.FLOAT, false, 24, 0);
+  gl.vertexAttribDivisor(dst, 1);
+  gl.enableVertexAttribArray(src);
+  gl.vertexAttribPointer(src, 2, gl.FLOAT, false, 24, 16);
+  gl.vertexAttribDivisor(src, 1);
+
+  gl.bindTexture(gl.TEXTURE_2D, gl.createTexture());
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+  gl.pixelStorei(gl.UNPACK_PREMULTIPLY_ALPHA_WEBGL, true);
+  gl.enable(gl.BLEND);
+  gl.blendFunc(gl.ONE, gl.ONE_MINUS_SRC_ALPHA);
+  gl.clearColor(0, 0, 0, 0);
+
+  cv.addEventListener('webglcontextlost', () => {
+    dbg('glyph batching: WebGL context lost, back to drawImage');
+    blit.failed = true;
+    blit.gl = null;
+  });
+  blit.u = { size: gl.getUniformLocation(prog, 'size'), atlas: gl.getUniformLocation(prog, 'atlas'), cell: gl.getUniformLocation(prog, 'cell') };
+  blit.gl = gl;
+  return true;
+}
+
+// Start queuing cells for canvas context c, or return false to draw directly.
+function blitBegin(c, pal) {
+  if (blit.failed) return false;
+  if (!blit.gl) {
+    try {
+      if (!blitInit()) throw new Error('no GPU WebGL2');
+      dbg('glyph batching: WebGL2');
+    } catch (err) {
+      dbg('glyph batching off:', err.message);
+      blit.failed = true;
+      return false;
+    }
+  }
+  const gl = blit.gl;
+  if (blit.atlas !== pal.atlas) {
+    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, pal.atlas);
+    blit.atlas = pal.atlas;
+  }
+  gl.uniform2f(blit.u.atlas, pal.atlas.width, pal.atlas.height);
+  gl.uniform2f(blit.u.cell, pal.cw, pal.ch);
+  blit.n = 0;
+  blit.on = true;
+  return true;
+}
+
+function blitCell(sx, sy, dx, dy, w, h) {
+  let d = blit.data;
+  const i = blit.n++ * 6;
+  if (i + 6 > d.length) {
+    blit.data = new Float32Array(d.length * 2);
+    blit.data.set(d);
+    d = blit.data;
+  }
+  d[i] = dx; d[i + 1] = dy; d[i + 2] = w; d[i + 3] = h; d[i + 4] = sx; d[i + 5] = sy;
+}
+
+// Paint the queued cells onto c.
+function blitEnd(c) {
+  blit.on = false;
+  const gl = blit.gl;
+  if (!gl || !blit.n) return;
+  const cv = gl.canvas, W = c.canvas.width, H = c.canvas.height;
+  if (cv.width !== W || cv.height !== H) {
+    cv.width = W;
+    cv.height = H;
+  }
+  gl.viewport(0, 0, W, H);
+  gl.uniform2f(blit.u.size, W, H);
+  gl.clear(gl.COLOR_BUFFER_BIT);
+  gl.bufferData(gl.ARRAY_BUFFER, blit.data.subarray(0, blit.n * 6), gl.STREAM_DRAW);
+  gl.drawArraysInstanced(gl.TRIANGLE_STRIP, 0, 4, blit.n);
+  c.drawImage(cv, 0, 0);
 }
 
 // The analyser listens to the source's own sound when it has one (a video
@@ -3108,7 +3247,7 @@ function openOutput() {
     show.win.focus();
     return;
   }
-  const win = window.open('output.html?v=36', 'emojiFiedOutput', 'popup,width=960,height=540');
+  const win = window.open('output.html?v=37', 'emojiFiedOutput', 'popup,width=960,height=540');
   if (!win) {
     toast('Allow pop-ups for this site to open the output window');
     return;
@@ -4481,5 +4620,5 @@ try {
 } catch (err) {
   ui.error.textContent = `Setup failed: ${err.message}`;
 }
-window.emojiFiedReady = '36';
+window.emojiFiedReady = '37';
 dbg('app.js v36 initialised');
